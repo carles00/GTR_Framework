@@ -20,15 +20,31 @@ namespace SCN {
 
 	// This class is in charge of rendering anything in our system.
 	// Separating the render from anything else makes the code cleaner
+	class RenderCall {
+	public:
+		GFX::Mesh* mesh;
+		Material* material;
+		Matrix44 model;
+		
+		static bool render_call_sort(RenderCall a, RenderCall b) {
+			return (a.distance_to_camera > b.distance_to_camera && a.material->alpha_mode != SCN::eAlphaMode::BLEND && b.material->alpha_mode == SCN::eAlphaMode::BLEND);
+		}
+
+		float distance_to_camera;
+	};
+
 	class Renderer
 	{
 	public:
 		bool render_wireframe;
 		bool render_boundaries;
+		bool priority_render;
 
 		GFX::Texture* skybox_cubemap;
 
 		SCN::Scene* scene;
+		//render calls vector
+		std::vector<RenderCall> render_order;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -38,6 +54,8 @@ namespace SCN {
 
 		//add here your functions
 		//...
+		void priorityRendering();
+		void createRenderCall(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);

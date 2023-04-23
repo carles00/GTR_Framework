@@ -27,8 +27,10 @@ Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
+	priority_render = true;
 	scene = nullptr;
 	skybox_cubemap = nullptr;
+	render_order = std::vector<RenderCall>();
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -63,7 +65,8 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	//render skybox
 	if(skybox_cubemap)
 		renderSkybox(skybox_cubemap);
-
+	// change this for sorted rendering
+	
 	//render entities
 	for (int i = 0; i < scene->entities.size(); ++i)
 	{
@@ -79,6 +82,10 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 				renderNode( &pent->root, camera);
 		}
 	}
+
+	if (priority_render)
+		priorityRendering();
+
 }
 
 
@@ -117,7 +124,6 @@ void Renderer::renderNode(SCN::Node* node, Camera* camera)
 
 	//compute global matrix
 	Matrix44 node_model = node->getGlobalMatrix(true);
-
 	//does this node have a mesh? then we must render it
 	if (node->mesh && node->material)
 	{
@@ -129,7 +135,14 @@ void Renderer::renderNode(SCN::Node* node, Camera* camera)
 		{
 			if(render_boundaries)
 				node->mesh->renderBounding(node_model, true);
-			renderMeshWithMaterial(node_model, node->mesh, node->material);
+			if (priority_render) {
+				//create_remder_call
+				createRenderCall(node_model, node->mesh, node->material);
+			}
+			else {
+				renderMeshWithMaterial(node_model, node->mesh, node->material);
+			}
+			//create render call
 		}
 	}
 
@@ -148,16 +161,15 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 
 	//define locals to simplify coding
 	GFX::Shader* shader = NULL;
-	GFX::Texture* texture = NULL;
 	Camera* camera = Camera::current;
 	
-	texture = material->textures[SCN::eTextureChannel::ALBEDO].texture;
+	GFX::Texture* albedo_texture = material->textures[SCN::eTextureChannel::ALBEDO].texture;
 	//texture = material->emissive_texture;
 	//texture = material->metallic_roughness_texture;
 	//texture = material->normal_texture;
 	//texture = material->occlusion_texture;
-	if (texture == NULL)
-		texture = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
+	if (albedo_texture == NULL)
+		albedo_texture = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
 
 	//select the blending
 	if (material->alpha_mode == SCN::eAlphaMode::BLEND)
@@ -194,8 +206,8 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	shader->setUniform("u_time", t );
 
 	shader->setUniform("u_color", material->color);
-	if(texture)
-		shader->setUniform("u_texture", texture, 0);
+	if(albedo_texture)
+		shader->setUniform("u_texture", albedo_texture, 0);
 
 	//this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
 	shader->setUniform("u_alpha_cutoff", material->alpha_mode == SCN::eAlphaMode::MASK ? material->alpha_cutoff : 0.001f);
@@ -214,6 +226,29 @@ void Renderer::renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN
 	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
 }
 
+void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material) {
+	RenderCall rc;
+	Vector3f nodepos = model.getTranslation();
+	rc.model = model;
+	rc.mesh = mesh;
+	rc.material = material; 
+	rc.distance_to_camera = nodepos.distance(Camera::current->eye);
+	render_order.push_back(rc);
+}
+
+void SCN::Renderer::priorityRendering() {
+	//order render_order
+	std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort );
+	//call renderMeshWithMaterial
+	for (int i = 0; i < render_order.size(); i++) {
+		renderMeshWithMaterial(render_order[i].model, render_order[i].mesh, render_order[i].material);
+	}
+
+	render_order.clear();
+
+	//once done empty render_order
+}
+
 void SCN::Renderer::cameraToShader(Camera* camera, GFX::Shader* shader)
 {
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix );
@@ -229,7 +264,7 @@ void Renderer::showUI()
 	ImGui::Checkbox("Boundaries", &render_boundaries);
 
 	//add here your stuff
-	//...
+	ImGui::Checkbox("Priority Rendering", &priority_render);
 }
 
 #else
