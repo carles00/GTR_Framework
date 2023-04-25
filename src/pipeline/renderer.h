@@ -53,6 +53,7 @@ namespace SCN {
 		//render calls vector
 		std::vector<RenderCall> render_order;
 		std::vector<LightEntity*> lights;
+		std::vector<LightEntity*> visible_lights;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -64,6 +65,9 @@ namespace SCN {
 		//...
 		void priorityRendering();
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void walkEntities(SCN::Node* node, Camera* camera);
+		void singlePass();
+		void multiPass();
 
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
