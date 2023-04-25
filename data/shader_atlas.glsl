@@ -4,6 +4,7 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
+light basic.vs light.fs
 
 \basic.vs
 
@@ -213,4 +214,47 @@ void main()
 
 	//calcule the position of the vertex using the matrices
 	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
+}
+
+\light.fs
+
+#version 330 core
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+
+//material properties
+uniform vec4 u_color;
+uniform vec3 u_emissive_factor;
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_emissive_texture;
+
+//global properties
+uniform float u_time;
+uniform float u_alpha_cutoff;
+uniform vec3 u_ambient;
+
+out vec4 FragColor;
+
+void main()
+{
+	vec2 uv = v_uv;
+	vec4 albedo = u_color;
+	albedo *= texture( u_albedo_texture, v_uv );
+
+	if(albedo.a < u_alpha_cutoff)
+		discard;
+
+	vec3 light = vec3(0.0);
+
+	light += u_ambient;
+
+	vec3 color = albedo.xyz * light;
+	color += u_emissive_factor * texture( u_emissive_texture, v_uv ).xyz;
+
+	FragColor = vec4(color, albedo.a);
 }

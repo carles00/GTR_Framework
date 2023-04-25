@@ -17,6 +17,10 @@ namespace SCN {
 
 	class Prefab;
 	class Material;
+	enum eRenderMode {
+		FLAT,
+		LIGHTS
+	};
 
 	// This class is in charge of rendering anything in our system.
 	// Separating the render from anything else makes the code cleaner
@@ -27,8 +31,9 @@ namespace SCN {
 		Matrix44 model;
 		
 		static bool render_call_sort(RenderCall a, RenderCall b) {
-			return (a.distance_to_camera > b.distance_to_camera && a.material->alpha_mode != SCN::eAlphaMode::BLEND && b.material->alpha_mode == SCN::eAlphaMode::BLEND);
+			return (a.distance_to_camera > b.distance_to_camera );
 		}
+		//&& a.material->alpha_mode != SCN::eAlphaMode::BLEND && b.material->alpha_mode == SCN::eAlphaMode::BLEND
 
 		float distance_to_camera;
 	};
@@ -39,12 +44,15 @@ namespace SCN {
 		bool render_wireframe;
 		bool render_boundaries;
 		bool priority_render;
+		eRenderMode render_mode;
+		int N_LIGHTS;
 
 		GFX::Texture* skybox_cubemap;
 
 		SCN::Scene* scene;
 		//render calls vector
 		std::vector<RenderCall> render_order;
+		std::vector<LightEntity*> lights;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -55,7 +63,7 @@ namespace SCN {
 		//add here your functions
 		//...
 		void priorityRendering();
-		void createRenderCall(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
@@ -68,6 +76,8 @@ namespace SCN {
 
 		//to render one mesh given its material and transformation matrix
 		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+
+		void renderMeshWithMaterialLight(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 
 		void showUI();
 
