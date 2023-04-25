@@ -232,11 +232,25 @@ uniform vec4 u_color;
 uniform vec3 u_emissive_factor;
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
+uniform sampler2D u_occlusion_texture;
 
 //global properties
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_ambient;
+
+#define NO_LIGHT 0
+#define POINT_LIGHT 1
+#define SPOT_LIGHT 2
+#define DIRECTIONAL_LIGHT 3
+
+
+uniform vec4 u_light_info; //type, near, far, 0
+uniform vec3 u_light_front;
+uniform vec3 u_light_position;
+uniform vec3 u_light_color;
+uniform vec2 u_light_cone; // cos(max_ang), cos(min_ang)
+uniform float u_max_distance;
 
 out vec4 FragColor;
 
@@ -245,13 +259,45 @@ void main()
 	vec2 uv = v_uv;
 	vec4 albedo = u_color;
 	albedo *= texture( u_albedo_texture, v_uv );
-
+	//discard if alpha is too low
 	if(albedo.a < u_alpha_cutoff)
 		discard;
 
+	//normal
+	vec3 N = normalize(v_normal);
+	//store light
 	vec3 light = vec3(0.0);
-
+	//add ambient
+	
 	light += u_ambient;
+	
+
+	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
+		vec3 L = u_light_position - v_world_position;
+		float dist = length(L);
+		L /= dist;
+		float NdotL = dot(N, L);
+
+		//attenuation
+		float att_factor = (u_light_info.z - dist) / u_light_info.z;
+		att_factor = max(att_factor, 0);
+
+		if(int(u_light_info.x) == SPOT_LIGHT){
+			float cos_angle = dot(u_light_front, L);
+			if(cos_angle < u_light_cone.y){
+				att_factor = 0;
+			}
+			else if(cos_angle < u_light_cone.x){
+				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
+			}
+		}
+		light += max(NdotL, 0.0)* u_light_color * att_factor;
+		
+	}
+	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
+		float NdotL = dot(N, u_light_front);
+		light += max(NdotL, 0.0)* u_light_color;
+	}
 
 	vec3 color = albedo.xyz * light;
 	color += u_emissive_factor * texture( u_emissive_texture, v_uv ).xyz;

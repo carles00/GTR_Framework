@@ -43,7 +43,6 @@ namespace SCN {
 	public:
 		bool render_wireframe;
 		bool render_boundaries;
-		bool priority_render;
 		eRenderMode render_mode;
 		int N_LIGHTS;
 
@@ -79,9 +78,9 @@ namespace SCN {
 		void renderNode(SCN::Node* node, Camera* camera);
 
 		//to render one mesh given its material and transformation matrix
-		void renderMeshWithMaterial(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void renderMeshWithMaterial(RenderCall* rc);
 
-		void renderMeshWithMaterialLight(const Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void renderMeshWithMaterialLight(RenderCall* rc);
 
 		void showUI();
 
