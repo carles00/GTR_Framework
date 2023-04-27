@@ -220,29 +220,31 @@ void main()
 
 #version 330 core
 
+#define NO_LIGHT 0
+#define POINT_LIGHT 1
+#define SPOT_LIGHT 2
+#define DIRECTIONAL_LIGHT 3
+
 in vec3 v_position;
 in vec3 v_world_position;
 in vec3 v_normal;
 in vec2 v_uv;
 in vec4 v_color;
 
-
-//material properties
 uniform vec4 u_color;
 uniform vec3 u_emissive_factor;
+uniform vec2 u_metalic_roughness; //metalic, roughness
+uniform vec3 u_view_pos;
+
+uniform vec4 u_texture_flags; //normal, occlusion, specular
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
-uniform sampler2D u_occlusion_texture;
+uniform sampler2D u_occ_met_rough_texture;
+uniform sampler2D u_normal_map;
 
-//global properties
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_ambient;
-
-#define NO_LIGHT 0
-#define POINT_LIGHT 1
-#define SPOT_LIGHT 2
-#define DIRECTIONAL_LIGHT 3
 
 
 uniform vec4 u_light_info; //type, near, far, 0
@@ -252,7 +254,34 @@ uniform vec3 u_light_color;
 uniform vec2 u_light_cone; // cos(max_ang), cos(min_ang)
 uniform float u_max_distance;
 
+
 out vec4 FragColor;
+
+mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
+{
+  // get edge vectors of the pixel triangle
+  vec3 dp1 = dFdx(p);
+  vec3 dp2 = dFdy(p);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+
+  // solve the linear system
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  // construct a scale-invariant frame 
+  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
+  return mat3(normalize(T * invmax), normalize(B * invmax), N);
+}
+
+vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
+{
+	normal_pixel = normal_pixel * 255./127. - 128./127.;
+	mat3 TBN = cotangent_frame(N, WP, uv);
+	return normalize(TBN * normal_pixel);
+}
 
 void main()
 {
@@ -265,13 +294,26 @@ void main()
 
 	//normal
 	vec3 N = normalize(v_normal);
+	
+	//if the mesh has normal map
+	if(u_texture_flags.x == 1){ 
+		vec3 normal_pixel = texture( u_normal_map, uv ).xyz;
+		N = perturbNormal(N,v_world_position,uv , normal_pixel);
+	}
+
+	
 	//store light
 	vec3 light = vec3(0.0);
 	//add ambient
+	//occulision enabled
+	if(u_texture_flags.y == 1){
+		float occ_fact = texture( u_occ_met_rough_texture, uv ).x;
+		light += u_ambient * occ_fact;
+	}else{
+		light += u_ambient;
+	}
 	
-	light += u_ambient;
 	
-
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - v_world_position;
 		float dist = length(L);
@@ -291,12 +333,22 @@ void main()
 				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
 			}
 		}
-		light += max(NdotL, 0.0)* u_light_color * att_factor;
-		
+		light += max(NdotL, 0.0)* u_light_color * att_factor;		
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 		float NdotL = dot(N, u_light_front);
 		light += max(NdotL, 0.0)* u_light_color;
+
+		if(u_texture_flags.z == 1){
+			vec3 L = normalize(u_light_front);
+
+			vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
+			vec3 V = normalize(u_view_pos - v_world_position);
+			vec3 R = reflect(-L, N);
+			float spec = pow(max(dot(V,R),0.0), spec_factors.x );
+			vec3 specular = u_metalic_roughness.x * spec * u_light_color;
+			light += specular; 
+		}
 	}
 
 	vec3 color = albedo.xyz * light;

@@ -19,8 +19,10 @@ namespace SCN {
 	class Material;
 	enum eRenderMode {
 		FLAT,
-		LIGHTS
+		LIGHTS_MULTIPASS,
+		LIGHTS_SINGLEPASS
 	};
+
 
 	// This class is in charge of rendering anything in our system.
 	// Separating the render from anything else makes the code cleaner
@@ -31,7 +33,7 @@ namespace SCN {
 		Matrix44 model;
 		
 		static bool render_call_sort(RenderCall a, RenderCall b) {
-			return (a.distance_to_camera > b.distance_to_camera );
+			return (a.material->alpha_mode < b.material->alpha_mode);
 		}
 		//&& a.material->alpha_mode != SCN::eAlphaMode::BLEND && b.material->alpha_mode == SCN::eAlphaMode::BLEND
 
@@ -41,9 +43,14 @@ namespace SCN {
 	class Renderer
 	{
 	public:
+		//ImGui options
 		bool render_wireframe;
 		bool render_boundaries;
 		eRenderMode render_mode;
+		bool enable_normal_map;
+		bool enable_occ;
+		bool enable_specular;
+		
 		int N_LIGHTS;
 
 		GFX::Texture* skybox_cubemap;
@@ -52,7 +59,6 @@ namespace SCN {
 		//render calls vector
 		std::vector<RenderCall> render_order;
 		std::vector<LightEntity*> lights;
-		std::vector<LightEntity*> visible_lights;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -65,8 +71,8 @@ namespace SCN {
 		void priorityRendering();
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 		void walkEntities(SCN::Node* node, Camera* camera);
-		void singlePass();
-		void multiPass();
+		void singlePass(RenderCall* rc, GFX::Shader* shader);
+		void multiPass(RenderCall* rc, GFX::Shader* shader);
 
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);

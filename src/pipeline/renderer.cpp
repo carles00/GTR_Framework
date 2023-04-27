@@ -27,7 +27,11 @@ Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
-	render_mode = eRenderMode::LIGHTS;
+	render_mode = eRenderMode::LIGHTS_MULTIPASS;
+	enable_normal_map = true;
+	enable_occ = true;
+	enable_specular = false;
+
 	scene = nullptr;
 	skybox_cubemap = nullptr;
 	render_order = std::vector<RenderCall>();
@@ -89,7 +93,8 @@ void SCN::Renderer::priorityRendering() {
 			case SCN::FLAT:
 				renderMeshWithMaterial(&render_order[i]);
 				break;
-			case SCN::LIGHTS:
+			case SCN::LIGHTS_MULTIPASS:
+			case SCN::LIGHTS_SINGLEPASS:
 				renderMeshWithMaterialLight(&render_order[i]);
 				break;
 			default:
@@ -122,6 +127,47 @@ void Renderer::walkEntities(SCN::Node* node, Camera* camera) {
 	//iterate recursively with children
 	for (int i = 0; i < node->children.size(); ++i)
 		walkEntities(node->children[i], camera);
+}
+
+void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
+	for (int i = 0; i < lights.size(); i++)
+	{
+		/*
+		if (i == 0) {
+			glDisable(GL_BLEND);
+		}
+		else {
+			glEnable(GL_BLEND);
+		}
+		*/
+		//if distance from light is too big, continue
+		LightEntity* light = lights[i];
+		//only check spot and point because directional and ambient are global
+		if (light->light_type == eLightType::SPOT || light->light_type == eLightType::POINT) {
+			BoundingBox world_bounding = transformBoundingBox(rc->model, rc->mesh->box);
+			if (!BoundingBoxSphereOverlap(world_bounding, light->root.model.getTranslation(), light->max_distance)) {
+				continue;
+			}
+
+		}
+
+		shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
+		shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
+		shader->setUniform("u_light_position", light->root.model.getTranslation());
+		shader->setUniform("u_light_color", light->color * light->intensity);
+		if (light->light_type == eLightType::SPOT)
+			shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
+
+
+
+		//do the draw call that renders the mesh into the screen
+		rc->mesh->render(GL_TRIANGLES);
+
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		shader->setUniform("u_ambient", vec3(0.0));
+		shader->setUniform("u_emissive_factor", vec3(0.0));
+	}
 }
 
 void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
@@ -309,9 +355,8 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc)
 	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
 	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
 	GFX::Texture* metalic_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
-	//texture = material->metallic_roughness_texture;
-	//texture = material->normal_texture;
-	//GFX::Texture* occlusion_texture = material->textures[SCN::eTextureChannel::OCCLUSION].texture;
+	GFX::Texture* normal_map = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
+	//GFX::Texture* occlusion_texture = rc->material->textures[SCN::eTextureChannel::OCCLUSION].texture;
 
 	//select the blending
 	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
@@ -354,13 +399,33 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc)
 	shader->setUniform("u_ambient", scene->ambient_light);
 	//this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
 	shader->setUniform("u_alpha_cutoff", rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f);
+	
+	//set texture flags
+	vec4 texture_flags = vec4(0,0,0,0); //normal, occlusion,specular | if 0 there is no texture 
+
+	//normal map
+	if (normal_map && enable_normal_map) {
+		texture_flags.x = 1;
+		shader->setUniform("u_normal_map",normal_map,2);
+	}
+	//occ & specular
+	if (metalic_texture && (enable_occ|| enable_specular)) {
+		if(enable_occ)
+			texture_flags.y = 1;
+		if (enable_specular) {
+			texture_flags.z = 1;
+			shader->setUniform("u_metalic_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
+			shader->setUniform("u_view_pos", Camera::current->eye);
+			//std::cout << rc->material->metallic_factor << "\n";
+		}
+
+		shader->setUniform("u_occ_met_rough_texture", metalic_texture,3);
+	}
+
+	shader->setUniform("u_texture_flags", texture_flags);
 
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
-
-	//---------------------------------//
-	//-------------multipass-----------//
-	
 
 	//allow rendering at the same depth
 	glDepthFunc(GL_LEQUAL);
@@ -371,54 +436,14 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc)
 		rc->mesh->render(GL_TRIANGLES);
 	}
 	else {
-		for (int i = 0; i < lights.size(); i++)
-		{
-			/*
-			if (i == 0) {
-				glDisable(GL_BLEND);
-			}
-			else {
-				glEnable(GL_BLEND);
-			}
-			*/
-			//if distance from light is too big, continue
-			LightEntity* light = lights[i];
-			//only check spot and point because directional and ambient are global
-			if (light->light_type == eLightType::SPOT || light->light_type == eLightType::POINT) {
-				BoundingBox world_bounding = transformBoundingBox(rc->model, rc->mesh->box);
-				if (!BoundingBoxSphereOverlap(world_bounding, light->root.model.getTranslation(), light->max_distance)) {
-					continue;
-				}
-
-			}
-
-			shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
-			shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
-			shader->setUniform("u_light_position", light->root.model.getTranslation());
-			shader->setUniform("u_light_color", light->color * light->intensity);
-			if (light->light_type == eLightType::SPOT)
-				shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
-
-
-
-			//do the draw call that renders the mesh into the screen
-			rc->mesh->render(GL_TRIANGLES);
-
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-			shader->setUniform("u_ambient", vec3(0.0));
-			shader->setUniform("u_emissive_factor", vec3(0.0));
+		if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
+			multiPass(rc, shader);
 		}
 	}
-
-	
 
 	glDepthFunc(GL_LESS);
 
 	glBlendFunc(GL_SRC0_ALPHA, GL_ONE);
-
-
-	//----------------------//
 
 	//disable shader
 	shader->disable();
@@ -443,7 +468,10 @@ void Renderer::showUI()
 	ImGui::Checkbox("Boundaries", &render_boundaries);
 
 	//add here your stuff
-	ImGui::Combo("Render Mode",(int*) & render_mode, "FLAT\0LIGHTS\0", 2);
+	ImGui::Checkbox("Normal Map", &enable_normal_map);
+	ImGui::Checkbox("Occlusion", &enable_occ);
+	ImGui::Checkbox("Specular", &enable_specular);
+	ImGui::Combo("Render Mode",(int*) & render_mode, "FLAT\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0", 3);
 }
 
 #else
