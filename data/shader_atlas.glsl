@@ -4,7 +4,8 @@ texture basic.vs texture.fs
 skybox basic.vs skybox.fs
 depth quad.vs depth.fs
 multi basic.vs multi.fs
-light basic.vs light.fs
+light_multipass basic.vs light_multipass.fs
+light_singlepass basic.vs light_singlepass.fs
 
 \basic.vs
 
@@ -216,7 +217,7 @@ void main()
 	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
 }
 
-\light.fs
+\light_multipass.fs
 
 #version 330 core
 
@@ -345,9 +346,156 @@ void main()
 			vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
 			vec3 V = normalize(u_view_pos - v_world_position);
 			vec3 R = reflect(-L, N);
-			float spec = pow(max(dot(V,R),0.0), spec_factors.x );
-			vec3 specular = u_metalic_roughness.x * spec * u_light_color;
+			float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
+			vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
 			light += specular; 
+		}
+	}
+
+	vec3 color = albedo.xyz * light;
+	color += u_emissive_factor * texture( u_emissive_texture, v_uv ).xyz;
+
+	FragColor = vec4(color, albedo.a);
+}
+
+\light_singlepass.fs
+
+#version 330 core
+
+#define NO_LIGHT 0
+#define POINT_LIGHT 1
+#define SPOT_LIGHT 2
+#define DIRECTIONAL_LIGHT 3
+
+
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+uniform vec4 u_color;
+uniform vec3 u_emissive_factor;
+uniform vec2 u_metalic_roughness; //metalic, roughness
+uniform vec3 u_view_pos;
+
+uniform vec4 u_texture_flags; //normal, occlusion, specular
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_emissive_texture;
+uniform sampler2D u_occ_met_rough_texture;
+uniform sampler2D u_normal_map;
+
+uniform float u_time;
+uniform float u_alpha_cutoff;
+uniform vec3 u_ambient;
+
+const int MAX_LIGHTS = 10;
+
+uniform vec4 u_light_info[MAX_LIGHTS]; //type, near, far, 0
+uniform vec3 u_light_front[MAX_LIGHTS];
+uniform vec3 u_light_position[MAX_LIGHTS];
+uniform vec3 u_light_color[MAX_LIGHTS];
+uniform vec2 u_light_cone[MAX_LIGHTS]; // cos(max_ang), cos(min_ang)
+uniform int u_num_lights;
+
+out vec4 FragColor;
+
+mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
+{
+  // get edge vectors of the pixel triangle
+  vec3 dp1 = dFdx(p);
+  vec3 dp2 = dFdy(p);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+
+  // solve the linear system
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  // construct a scale-invariant frame 
+  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
+  return mat3(normalize(T * invmax), normalize(B * invmax), N);
+}
+
+vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
+{
+	normal_pixel = normal_pixel * 255./127. - 128./127.;
+	mat3 TBN = cotangent_frame(N, WP, uv);
+	return normalize(TBN * normal_pixel);
+}
+
+void main()
+{
+	vec2 uv = v_uv;
+	vec4 albedo = u_color;
+	albedo *= texture( u_albedo_texture, v_uv );
+	//discard if alpha is too low
+	if(albedo.a < u_alpha_cutoff)
+		discard;
+
+	//normal
+	vec3 N = normalize(v_normal);
+	
+	//if the mesh has normal map
+	if(u_texture_flags.x == 1){ 
+		vec3 normal_pixel = texture( u_normal_map, uv ).xyz;
+		N = perturbNormal(N,v_world_position,uv , normal_pixel);
+	}
+
+	
+	//store light
+	vec3 light = vec3(0.0);
+	//add ambient
+	//occulision enabled
+	if(u_texture_flags.y == 1){
+		float occ_fact = texture( u_occ_met_rough_texture, uv ).x;
+		light += u_ambient * occ_fact;
+	}else{
+		light += u_ambient;
+	}
+	
+	for(int i = 0; i<MAX_LIGHTS; i++)
+	{
+		if(i < u_num_lights){
+			if(int(u_light_info[i].x) == POINT_LIGHT || int(u_light_info[i].x) == SPOT_LIGHT){
+				vec3 L = u_light_position[i] - v_world_position;
+				float dist = length(L);
+				L /= dist;
+				float NdotL = dot(N, L);
+
+				//attenuation
+				float att_factor = (u_light_info[i].z - dist) / u_light_info[i].z;
+				att_factor = max(att_factor, 0);
+
+				if(int(u_light_info[i].x) == SPOT_LIGHT){
+					float cos_angle = dot(u_light_front[i], L);
+					if(cos_angle < u_light_cone[i].y){
+						att_factor = 0;
+					}
+					else if(cos_angle < u_light_cone[i].x){
+						att_factor *= 1.0 - (cos_angle - u_light_cone[i].x) / (u_light_cone[i].y - u_light_cone[i].x);
+					}
+				}
+				light += max(NdotL, 0.0)* u_light_color[i] * att_factor;		
+			}
+			else if(int(u_light_info[i].x) == DIRECTIONAL_LIGHT){
+				float NdotL = dot(N, u_light_front[i]);
+				light += max(NdotL, 0.0)* u_light_color[i];
+
+				if(u_texture_flags.z == 1){
+					vec3 L = normalize(u_light_front[i]);
+
+					vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
+					vec3 V = normalize(u_view_pos - v_world_position);
+					vec3 R = reflect(-L, N);
+					float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
+					vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color[i];
+					light += specular; 
+				}
+			}	
 		}
 	}
 

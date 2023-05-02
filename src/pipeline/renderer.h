@@ -5,6 +5,8 @@
 #include "light.h"
 
 //forward declarations
+#define MAX_LIGHTS 10
+
 class Camera;
 class Skeleton;
 namespace GFX {
@@ -46,12 +48,11 @@ namespace SCN {
 		//ImGui options
 		bool render_wireframe;
 		bool render_boundaries;
+		bool enable_render_priority;
 		eRenderMode render_mode;
 		bool enable_normal_map;
 		bool enable_occ;
 		bool enable_specular;
-		
-		int N_LIGHTS;
 
 		GFX::Texture* skybox_cubemap;
 
@@ -68,7 +69,7 @@ namespace SCN {
 
 		//add here your functions
 		//...
-		void priorityRendering();
+		void renderFrame();
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
 		void walkEntities(SCN::Node* node, Camera* camera);
 		void singlePass(RenderCall* rc, GFX::Shader* shader);

@@ -27,6 +27,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
+	enable_render_priority = true;
 	render_mode = eRenderMode::LIGHTS_MULTIPASS;
 	enable_normal_map = true;
 	enable_occ = true;
@@ -36,7 +37,6 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	skybox_cubemap = nullptr;
 	render_order = std::vector<RenderCall>();
 	lights = std::vector<LightEntity*>();
-	N_LIGHTS = 0;
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -52,8 +52,10 @@ void Renderer::setupScene()
 	else
 		skybox_cubemap = nullptr;
 	
-	//lights vector:
+	//clear lights vector
 	lights.clear();
+
+	//parse all scene nodes and asign them to rendercall or litghts
 	for (int i = 0; i < scene->entities.size(); ++i)
 	{
 		BaseEntity* ent = scene->entities[i];
@@ -63,15 +65,40 @@ void Renderer::setupScene()
 		if (ent->getType() == SCN::eEntityType::PREFAB) {
 			PrefabEntity* pent = (SCN::PrefabEntity*)ent;
 			if (pent->prefab)
+				//if it is a prefab create the renderCalls
 				walkEntities(&pent->root, Camera::current);
 
 		}else if (ent->getType() == SCN::eEntityType::LIGHT){
 			lights.push_back((SCN::LightEntity*)ent);
 		}
-		
 	}
-	N_LIGHTS = lights.size();
 }
+
+void Renderer::walkEntities(SCN::Node* node, Camera* camera) {
+	if (!node->visible)
+		return;
+
+	//compute global matrix
+	Matrix44 node_model = node->getGlobalMatrix(true);
+	//does this node have a mesh? then we must render it
+	if (node->mesh && node->material)
+	{
+		//compute the bounding box of the object in world space (by using the mesh bounding box transformed to world space)
+		BoundingBox world_bounding = transformBoundingBox(node_model, node->mesh->box);
+
+		//if bounding box is inside the camera frustum then the object is probably visible
+		if (camera->testBoxInFrustum(world_bounding.center, world_bounding.halfsize))
+		{
+			//create the render calls
+			createRenderCall(node_model, node->mesh, node->material);
+		}
+	}
+
+	//iterate recursively with children
+	for (int i = 0; i < node->children.size(); ++i)
+		walkEntities(node->children[i], camera);
+}
+
 
 void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material) {
 	RenderCall rc;
@@ -83,9 +110,39 @@ void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Mater
 	render_order.push_back(rc);
 }
 
-void SCN::Renderer::priorityRendering() {
+void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
+{
+	this->scene = scene;
+	
+	//set the camera as default (used by some functions in the framework)
+	camera->enable();
+	
+	setupScene();
+
+	//render entities
+	renderFrame();
+
+}
+
+void SCN::Renderer::renderFrame() {
+	glDisable(GL_BLEND);
+	glEnable(GL_DEPTH_TEST);
+
+	//set the clear color (the background color)
+	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
+
+	// Clear the color and the depth buffer
+	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+	GFX::checkGLErrors();
+
+	//render skybox
+	if (skybox_cubemap)
+		renderSkybox(skybox_cubemap);
+
 	//order render_order
-	std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort);
+	if(enable_render_priority)
+		std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort);
+	
 	//call renderMeshWithMaterial
 	for (int i = 0; i < render_order.size(); i++) {
 		switch (render_mode)
@@ -105,41 +162,16 @@ void SCN::Renderer::priorityRendering() {
 	render_order.clear();
 }
 
-void Renderer::walkEntities(SCN::Node* node, Camera* camera) {
-	if (!node->visible)
-		return;
-
-	//compute global matrix
-	Matrix44 node_model = node->getGlobalMatrix(true);
-	//does this node have a mesh? then we must render it
-	if (node->mesh && node->material)
-	{
-		//compute the bounding box of the object in world space (by using the mesh bounding box transformed to world space)
-		BoundingBox world_bounding = transformBoundingBox(node_model, node->mesh->box);
-
-		//if bounding box is inside the camera frustum then the object is probably visible
-		if (camera->testBoxInFrustum(world_bounding.center, world_bounding.halfsize))
-		{
-			createRenderCall(node_model, node->mesh, node->material);
-		}
-	}
-
-	//iterate recursively with children
-	for (int i = 0; i < node->children.size(); ++i)
-		walkEntities(node->children[i], camera);
-}
-
 void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
+
+	if (lights.size() == 0) {
+		shader->setUniform("u_light_info", vec4(int(eLightType::NO_LIGHT), 0, 0, 0));
+		rc->mesh->render(GL_TRIANGLES);
+		return;
+	}
+	
 	for (int i = 0; i < lights.size(); i++)
 	{
-		/*
-		if (i == 0) {
-			glDisable(GL_BLEND);
-		}
-		else {
-			glEnable(GL_BLEND);
-		}
-		*/
 		//if distance from light is too big, continue
 		LightEntity* light = lights[i];
 		//only check spot and point because directional and ambient are global
@@ -148,7 +180,6 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 			if (!BoundingBoxSphereOverlap(world_bounding, light->root.model.getTranslation(), light->max_distance)) {
 				continue;
 			}
-
 		}
 
 		shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
@@ -157,8 +188,6 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 		shader->setUniform("u_light_color", light->color * light->intensity);
 		if (light->light_type == eLightType::SPOT)
 			shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
-
-
 
 		//do the draw call that renders the mesh into the screen
 		rc->mesh->render(GL_TRIANGLES);
@@ -170,30 +199,48 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 	}
 }
 
-void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
-{
-	this->scene = scene;
-	setupScene();
+void Renderer::singlePass(RenderCall* rc, GFX::Shader* shader) {
+	if (lights.size() == 0) {
+		shader->setUniform("u_num_lights", 0);
+		rc->mesh->render(GL_TRIANGLES);
+		return;
+	}
 
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
+	vec4 lights_info[MAX_LIGHTS];
+	vec3 lights_fronts[MAX_LIGHTS];
+	vec3 lights_positions[MAX_LIGHTS];
+	vec3 lights_colors[MAX_LIGHTS];
+	vec2 lights_cones[MAX_LIGHTS];
 
-	//set the clear color (the background color)
-	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
+	for (int  i = 0; i < MAX_LIGHTS; i++)
+	{
+		if (i < lights.size()) {
+			LightEntity* light = lights[i];
+			lights_info[i] = vec4((int)light->light_type, light->near_distance, light->max_distance, 0);
+			lights_fronts[i] = light->root.model.rotateVector(vec3(0, 0, 1));
+			lights_positions[i] = light->root.model.getTranslation();
+			lights_colors[i] = light->color * light->intensity;
+			if (light->light_type == eLightType::SPOT)
+				lights_cones[i] = vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD));
+			else
+				lights_cones[i] = vec2(0, 0);
+		}
+	}
+	int size = lights.size();
 
-	// Clear the color and the depth buffer
-	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-	GFX::checkGLErrors();
+	shader->setUniform4Array("u_light_info", (float *) &lights_info,size);
+	shader->setUniform3Array("u_light_front", (float*) &lights_fronts, size);
+	shader->setUniform3Array("u_light_position", (float*)&lights_positions, size);
+	shader->setUniform3Array("u_light_color", (float*)&lights_colors, size);
+	shader->setUniform2Array("u_light_cone", (float*)&lights_cones, size);
 
-	//render skybox
-	if(skybox_cubemap)
-		renderSkybox(skybox_cubemap);
+	shader->setUniform1("u_num_lights", size);
 
-	//render entities
-	
-	priorityRendering();
-	
+	//do the draw call that renders the mesh into the screen
+
+	rc->mesh->render(GL_TRIANGLES);
 }
+
 
 
 void Renderer::renderSkybox(GFX::Texture* cubemap)
@@ -223,44 +270,6 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
-//renders a node of the prefab and its children
-void Renderer::renderNode(SCN::Node* node, Camera* camera)
-{
-	/*
-	if (!node->visible)
-		return;
-
-	//compute global matrix
-	Matrix44 node_model = node->getGlobalMatrix(true);
-	//does this node have a mesh? then we must render it
-	if (node->mesh && node->material)
-	{
-		//compute the bounding box of the object in world space (by using the mesh bounding box transformed to world space)
-		BoundingBox world_bounding = transformBoundingBox(node_model,node->mesh->box);
-		
-		//if bounding box is inside the camera frustum then the object is probably visible
-		if (camera->testBoxInFrustum(world_bounding.center, world_bounding.halfsize) )
-		{	
-			switch (render_mode)
-			{
-			case SCN::FLAT:
-				renderMeshWithMaterial(node_model, node->mesh, node->material);
-				break;
-			case SCN::LIGHTS:
-				renderMeshWithMaterialLight(node_model, node->mesh, node->material);
-				break;
-			default:
-				break;
-			}
-		}
-	}
-
-	//iterate recursively with children
-	for (int i = 0; i < node->children.size(); ++i)
-		renderNode( node->children[i], camera);
-	*/
-}
-
 //renders a mesh given its transform and material
 void Renderer::renderMeshWithMaterial(RenderCall* rc)
 {
@@ -278,10 +287,6 @@ void Renderer::renderMeshWithMaterial(RenderCall* rc)
 	GFX::Texture* white = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
 	
 	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
-	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
-	//texture = material->metallic_roughness_texture;
-	//texture = material->normal_texture;
-	//texture = material->occlusion_texture;
 
 	//select the blending
 	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
@@ -377,7 +382,13 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc)
 	glEnable(GL_DEPTH_TEST);
 
 	//chose a shader
-	shader = GFX::Shader::Get("light");
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
+		shader = GFX::Shader::Get("light_multipass");
+	}
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) {
+		shader = GFX::Shader::Get("light_singlepass");
+	}
+	
 
 	assert(glGetError() == GL_NO_ERROR);
 
@@ -430,16 +441,14 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc)
 	//allow rendering at the same depth
 	glDepthFunc(GL_LEQUAL);
 
-
-	if (lights.size() == 0) {
-		shader->setUniform("u_light_info", vec4(int(eLightType::NO_LIGHT), 0, 0, 0));
-		rc->mesh->render(GL_TRIANGLES);
+	//select single or multipass
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
+		multiPass(rc, shader);
 	}
-	else {
-		if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
-			multiPass(rc, shader);
-		}
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) {
+		singlePass(rc, shader);
 	}
+	
 
 	glDepthFunc(GL_LESS);
 
@@ -468,10 +477,11 @@ void Renderer::showUI()
 	ImGui::Checkbox("Boundaries", &render_boundaries);
 
 	//add here your stuff
+	ImGui::Checkbox("Render Priority", &enable_render_priority);
 	ImGui::Checkbox("Normal Map", &enable_normal_map);
 	ImGui::Checkbox("Occlusion", &enable_occ);
 	ImGui::Checkbox("Specular", &enable_specular);
-	ImGui::Combo("Render Mode",(int*) & render_mode, "FLAT\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0", 3);
+	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0", 3);
 }
 
 #else
