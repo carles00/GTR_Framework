@@ -4,8 +4,8 @@
 
 #include "light.h"
 
-//forward declarations
 #define MAX_LIGHTS 10
+//forward declarations
 
 class Camera;
 class Skeleton;
@@ -21,6 +21,7 @@ namespace SCN {
 	class Material;
 	enum eRenderMode {
 		FLAT,
+		TEXTURED,
 		LIGHTS_MULTIPASS,
 		LIGHTS_SINGLEPASS
 	};
@@ -48,11 +49,22 @@ namespace SCN {
 		//ImGui options
 		bool render_wireframe;
 		bool render_boundaries;
+		bool show_shadowmaps;
 		bool enable_render_priority;
 		eRenderMode render_mode;
 		bool enable_normal_map;
 		bool enable_occ;
 		bool enable_specular;
+		bool enable_shadows;
+
+		//shadows
+		GFX::FBO* shadow_atlas_fbo;
+		GFX::Texture* shadow_atlas;
+
+		float shadow_atlas_width;
+		float shadow_atlas_height;
+		float shadowmap_width;
+		float shadowmap_height;
 
 		GFX::Texture* skybox_cubemap;
 
@@ -65,16 +77,20 @@ namespace SCN {
 		Renderer(const char* shaders_atlas_filename );
 
 		//just to be sure we have everything ready for the rendering
-		void setupScene();
+		void setupScene(Camera* camera);
 
 		//add here your functions
 		//...
-		void renderFrame();
-		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material);
+		void renderFrame(Camera* camera);
+		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos);
 		void walkEntities(SCN::Node* node, Camera* camera);
 		void singlePass(RenderCall* rc, GFX::Shader* shader);
 		void multiPass(RenderCall* rc, GFX::Shader* shader);
+		void generateShadowmaps();
 
+		//debug
+		void showShadowmaps();
+		
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
 
@@ -85,9 +101,9 @@ namespace SCN {
 		void renderNode(SCN::Node* node, Camera* camera);
 
 		//to render one mesh given its material and transformation matrix
-		void renderMeshWithMaterial(RenderCall* rc);
-
-		void renderMeshWithMaterialLight(RenderCall* rc);
+		void renderMeshWithMaterial(RenderCall* rc, Camera* camera);
+		void renderMeshWithMaterialFlat(RenderCall* rc, Camera* camera);
+		void renderMeshWithMaterialLight(RenderCall* rc, Camera* camera);
 
 		void showUI();
 

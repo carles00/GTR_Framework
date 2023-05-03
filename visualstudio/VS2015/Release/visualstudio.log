@@ -1,49 +1,117 @@
 ﻿  renderer.cpp
 C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(104,1): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'class' ahora se ve usando 'struct'
 C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(59,20): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(98,20): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(147,20): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(173,20): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(185,53): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(48,53): warning C4244: 'argumento': conversión de 'float' a 'int'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(48,33): warning C4244: 'argumento': conversión de 'float' a 'int'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(71,20): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(114,20): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(164,101): warning C4305: 'argumento': truncamiento de 'double' a 'float'
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(179,117): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(190,82): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(179,86): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(190,47): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(179,54): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(217,9): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(219,36): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(179,23): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(224,66): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(180,116): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(224,31): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(180,85): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
           with
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(322,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(403,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(180,53): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(180,22): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(238,20): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(336,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(466,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(537,20): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(549,53): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(554,82): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(554,47): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(557,66): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(594,9): warning C4018: '<': no coinciden signed/unsigned
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(597,36): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(602,66): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(602,31): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(606,48): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(649,56): warning C4305: 'argumento': truncamiento de 'double' a 'T'
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(656,31): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(656,23): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+          with
+          [
+              T=float
+          ]
      Creando biblioteca ..\..\GTR.lib y objeto ..\..\GTR.exp
 LINK : warning LNK4098: la biblioteca predeterminada'LIBCMT' entra en conflicto con otras bibliotecas; use la biblioteca /NODEFAULTLIB:biblioteca
   Generando código
-  6 of 5871 functions ( 0.1%) were compiled, the rest were copied from previous compilation.
+  4 of 5879 functions (<0.1%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    70 functions had inline decision re-evaluated but remain unchanged
+    64 functions had inline decision re-evaluated but remain unchanged
   Generación de código finalizada
 glew32s.lib(glew.obj) : warning LNK4099: no se encontró PDB '' con 'glew32s.lib(glew.obj)' o en ''; se vinculará el objeto sin tener en cuenta información de depuración
   visualstudio.vcxproj -> C:\Users\charl\Documents\GitHub\GTR_Framework\GTR.exe

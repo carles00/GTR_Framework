@@ -253,10 +253,53 @@ uniform vec3 u_light_front;
 uniform vec3 u_light_position;
 uniform vec3 u_light_color;
 uniform vec2 u_light_cone; // cos(max_ang), cos(min_ang)
-uniform float u_max_distance;
+
+uniform vec2 u_shadow_params; //0 or 1, bias
+uniform vec4 u_shadow_region;
+uniform mat4 u_shadow_viewproj;
+uniform sampler2D u_shadowmap;
 
 
 out vec4 FragColor;
+
+float testShadow(vec3 pos)
+{
+	//project our 3D position to the shadowmap
+	vec4 proj_pos = u_shadow_viewproj * vec4(pos,1.0);
+
+	//from homogeneus space to clip space
+	vec2 shadow_uv = proj_pos.xy / proj_pos.w;
+
+	//from clip space to uv space
+	shadow_uv = shadow_uv * 0.5 + vec2(0.5);
+
+	//get point depth [-1 .. +1] in non-linear space
+	float real_depth = (proj_pos.z - u_shadow_params.y) / proj_pos.w;
+
+	//normalize from [-1..+1] to [0..+1] still non-linear
+	real_depth = real_depth * 0.5 + 0.5;
+
+	//read depth from depth buffer in [0..+1] non-linear
+	//float shadow_depth = texture( u_shadowmap, vec2(shadow_uv.x*0.25, shadow_uv.y*0.5)).x;
+	float shadow_depth = texture( u_shadowmap, vec2((shadow_uv.x*u_shadow_region.z) + u_shadow_region.x, (shadow_uv.y*u_shadow_region.w)+u_shadow_region.y)).x;
+
+	//compute final shadow factor by comparing
+	float shadow_factor = 1.0;
+
+	//we can compare them, even if they are not linear
+	if( shadow_depth < real_depth )
+		shadow_factor = 0.0;
+	//it is outside on the sides
+	if( shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
+	    shadow_uv.y < 0.0 || shadow_uv.y > 1.0 )
+			return 1.0;
+
+	//it is before near or behind far plane
+	if(real_depth < 0.0 || real_depth > 1.0)
+		return 1.0;
+
+	return shadow_factor;
+}
 
 mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
 {
@@ -288,6 +331,11 @@ void main()
 {
 	vec2 uv = v_uv;
 	vec4 albedo = u_color;
+	float shadow_factor = 1.0;
+	if(u_shadow_params.x != 0.0){
+		shadow_factor = testShadow(v_world_position);
+	}
+
 	albedo *= texture( u_albedo_texture, v_uv );
 	//discard if alpha is too low
 	if(albedo.a < u_alpha_cutoff)
@@ -334,22 +382,27 @@ void main()
 				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
 			}
 		}
-		light += max(NdotL, 0.0)* u_light_color * att_factor;		
+		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;		
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 		float NdotL = dot(N, u_light_front);
-		light += max(NdotL, 0.0)* u_light_color;
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
+	}
 
-		if(u_texture_flags.z == 1){
-			vec3 L = normalize(u_light_front);
-
-			vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
-			vec3 V = normalize(u_view_pos - v_world_position);
-			vec3 R = reflect(-L, N);
-			float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
-			vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
-			light += specular; 
+	if(u_texture_flags.z == 1){
+		vec3 L = vec3(0,0,0);
+		if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
+			L = normalize(u_light_front);
+		}else{
+			L = normalize( u_light_position - v_world_position);
 		}
+
+		vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
+		vec3 V = normalize(u_view_pos - v_world_position);
+		vec3 R = reflect(-L, N);
+		float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
+		vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
+		light += specular; 
 	}
 
 	vec3 color = albedo.xyz * light;
@@ -391,7 +444,7 @@ uniform float u_alpha_cutoff;
 uniform vec3 u_ambient;
 
 const int MAX_LIGHTS = 10;
-
+//lights
 uniform vec4 u_light_info[MAX_LIGHTS]; //type, near, far, 0
 uniform vec3 u_light_front[MAX_LIGHTS];
 uniform vec3 u_light_position[MAX_LIGHTS];
@@ -399,7 +452,52 @@ uniform vec3 u_light_color[MAX_LIGHTS];
 uniform vec2 u_light_cone[MAX_LIGHTS]; // cos(max_ang), cos(min_ang)
 uniform int u_num_lights;
 
+//shadows
+uniform vec2 u_shadow_params[MAX_LIGHTS];
+uniform vec4 u_shadow_region[MAX_LIGHTS];
+uniform mat4 u_shadow_viewproj[MAX_LIGHTS];
+uniform sampler2D u_shadowmap;
+
 out vec4 FragColor;
+
+float testShadow(vec3 pos, int i)
+{
+	//project our 3D position to the shadowmap
+	vec4 proj_pos = u_shadow_viewproj[i] * vec4(pos,1.0);
+
+	//from homogeneus space to clip space
+	vec2 shadow_uv = proj_pos.xy / proj_pos.w;
+
+	//from clip space to uv space
+	shadow_uv = shadow_uv * 0.5 + vec2(0.5);
+
+	//get point depth [-1 .. +1] in non-linear space
+	float real_depth = (proj_pos.z - u_shadow_params[i].y) / proj_pos.w;
+
+	//normalize from [-1..+1] to [0..+1] still non-linear
+	real_depth = real_depth * 0.5 + 0.5;
+
+	//read depth from depth buffer in [0..+1] non-linear
+	//float shadow_depth = texture( u_shadowmap, vec2(shadow_uv.x*0.25, shadow_uv.y*0.5)).x;
+	float shadow_depth = texture( u_shadowmap, vec2((shadow_uv.x*u_shadow_region[i].z) + u_shadow_region[i].x, (shadow_uv.y*u_shadow_region[i].w)+u_shadow_region[i].y)).x;
+
+	//compute final shadow factor by comparing
+	float shadow_factor = 1.0;
+
+	//we can compare them, even if they are not linear
+	if( shadow_depth < real_depth )
+		shadow_factor = 0.0;
+	//it is outside on the sides
+	if( shadow_uv.x < 0.0 || shadow_uv.x > 1.0 ||
+	    shadow_uv.y < 0.0 || shadow_uv.y > 1.0 )
+			return 1.0;
+
+	//it is before near or behind far plane
+	if(real_depth < 0.0 || real_depth > 1.0)
+		return 1.0;
+
+	return shadow_factor;
+}
 
 mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
 {
@@ -460,6 +558,11 @@ void main()
 	for(int i = 0; i<MAX_LIGHTS; i++)
 	{
 		if(i < u_num_lights){
+			float shadow_factor = 1.0;
+			if(u_shadow_params[i].x != 0.0){
+				shadow_factor = testShadow(v_world_position,i);
+			}
+
 			if(int(u_light_info[i].x) == POINT_LIGHT || int(u_light_info[i].x) == SPOT_LIGHT){
 				vec3 L = u_light_position[i] - v_world_position;
 				float dist = length(L);
@@ -479,11 +582,11 @@ void main()
 						att_factor *= 1.0 - (cos_angle - u_light_cone[i].x) / (u_light_cone[i].y - u_light_cone[i].x);
 					}
 				}
-				light += max(NdotL, 0.0)* u_light_color[i] * att_factor;		
+				light += max(NdotL, 0.0)* u_light_color[i] * att_factor* shadow_factor;		
 			}
 			else if(int(u_light_info[i].x) == DIRECTIONAL_LIGHT){
 				float NdotL = dot(N, u_light_front[i]);
-				light += max(NdotL, 0.0)* u_light_color[i];
+				light += max(NdotL, 0.0)* u_light_color[i] * shadow_factor;
 
 				if(u_texture_flags.z == 1){
 					vec3 L = normalize(u_light_front[i]);
