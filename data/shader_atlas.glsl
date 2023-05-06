@@ -404,6 +404,9 @@ void main()
 		vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
 		light += specular; 
 	}
+	if(int(u_light_info.x) == NO_LIGHT){
+		light = vec3(1.0);
+	}
 
 	vec3 color = albedo.xyz * light;
 	color += u_emissive_factor * texture( u_emissive_texture, v_uv ).xyz;
