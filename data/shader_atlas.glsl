@@ -6,6 +6,10 @@ depth quad.vs depth.fs
 multi basic.vs multi.fs
 light_multipass basic.vs light_multipass.fs
 light_singlepass basic.vs light_singlepass.fs
+gbuffers basic.vs gbuffers.fs
+
+deferred_global quad.vs deferred_global.fs
+deferred_light quad.vs deferred_light.fs
 
 \basic.vs
 
@@ -217,36 +221,11 @@ void main()
 	gl_Position = u_viewprojection * vec4( v_world_position, 1.0 );
 }
 
-\light_multipass.fs
-
-#version 330 core
-
+\lights
 #define NO_LIGHT 0
 #define POINT_LIGHT 1
 #define SPOT_LIGHT 2
 #define DIRECTIONAL_LIGHT 3
-
-in vec3 v_position;
-in vec3 v_world_position;
-in vec3 v_normal;
-in vec2 v_uv;
-in vec4 v_color;
-
-uniform vec4 u_color;
-uniform vec3 u_emissive_factor;
-uniform vec2 u_metalic_roughness; //metalic, roughness
-uniform vec3 u_view_pos;
-
-uniform vec4 u_texture_flags; //normal, occlusion, specular
-uniform sampler2D u_albedo_texture;
-uniform sampler2D u_emissive_texture;
-uniform sampler2D u_occ_met_rough_texture;
-uniform sampler2D u_normal_map;
-
-uniform float u_time;
-uniform float u_alpha_cutoff;
-uniform vec3 u_ambient;
-
 
 uniform vec4 u_light_info; //type, near, far, 0
 uniform vec3 u_light_front;
@@ -258,10 +237,6 @@ uniform vec2 u_shadow_params; //0 or 1, bias
 uniform vec4 u_shadow_region;
 uniform mat4 u_shadow_viewproj;
 uniform sampler2D u_shadowmap;
-
-
-out vec4 FragColor;
-
 float testShadow(vec3 pos)
 {
 	//project our 3D position to the shadowmap
@@ -300,6 +275,39 @@ float testShadow(vec3 pos)
 
 	return shadow_factor;
 }
+
+
+\light_multipass.fs
+
+#version 330 core
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+
+
+uniform vec4 u_color;
+uniform vec3 u_emissive_factor;
+uniform vec2 u_metalic_roughness; //metalic, roughness
+uniform vec3 u_view_pos;
+
+uniform vec4 u_texture_flags; //normal, occlusion, specular
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_emissive_texture;
+uniform sampler2D u_occ_met_rough_texture;
+uniform sampler2D u_normal_map;
+
+uniform float u_time;
+uniform float u_alpha_cutoff;
+uniform vec3 u_ambient;
+
+#include "lights"
+
+out vec4 FragColor;
+
 
 mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
 {
@@ -609,4 +617,163 @@ void main()
 	color += u_emissive_factor * texture( u_emissive_texture, v_uv ).xyz;
 
 	FragColor = vec4(color, albedo.a);
+}
+
+\gbuffers.fs
+
+#version 330 core
+
+in vec3 v_position;
+in vec3 v_world_position;
+in vec3 v_normal;
+in vec2 v_uv;
+in vec4 v_color;
+
+uniform vec4 u_color;
+uniform sampler2D u_texture;
+uniform sampler2D u_emissive_texture;
+uniform float u_time;
+uniform float u_alpha_cutoff;
+uniform float u_emissive_factor;
+
+layout(location = 0) out vec4 FragColor;
+layout(location = 1) out vec4 NormalColor;
+layout(location = 2) out vec4 ExtraColor;
+
+
+void main()
+{
+	vec2 uv = v_uv;
+	vec4 color = u_color;
+	color *= texture( u_texture, v_uv );
+
+	vec3 N = normalize(v_normal);
+
+	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
+
+	if(color.a < u_alpha_cutoff)
+		discard;
+
+	FragColor = vec4(color.xyz, 1.0);
+	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
+	ExtraColor = vec4(emissive, 1.0);
+}
+
+\deferred_global.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_extra_texture;
+uniform sampler2D u_depth_texture;
+
+uniform vec3 u_ambient_light;
+
+out vec4 FragColor;
+
+void main()
+{
+	vec2 uv = v_uv;
+
+	float depth = texture( u_depth_texture, v_uv ).x;
+	if(depth == 1.0)
+		discard;
+
+	vec4 albedo = texture( u_albedo_texture, v_uv );
+	vec4 extra = texture( u_extra_texture, v_uv );
+	//vec4 normal_info = texture( u_normal_texture, v_uv );
+	//vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
+
+	vec4 color = vec4(0.0);
+
+	color.xyz += extra.xyz + u_ambient_light * albedo.xyz;
+	FragColor = color;
+	gl_FragDepth = depth;
+}
+
+
+\deferred_light.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_extra_texture;
+uniform sampler2D u_depth_texture;
+
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+
+#include "lights"
+
+out vec4 FragColor;
+
+void main()
+{
+	
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, v_uv ).x;
+	if(depth == 1.0)
+		discard;
+
+	
+
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+	vec4 albedo = texture( u_albedo_texture, v_uv );
+	//vec4 extra = texture( u_extra_texture, v_uv );
+	vec4 normal_info = texture( u_normal_texture, v_uv );
+	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
+
+	float shadow_factor = 1.0;
+	if(u_shadow_params.x != 0.0){
+		shadow_factor = testShadow(world_position);
+	}
+
+	//store light
+	vec3 light = vec3(0.0);
+	
+	
+	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
+		vec3 L = u_light_position - world_position;
+		float dist = length(L);
+		L /= dist;
+		float NdotL = dot(N, L);
+
+		//attenuation
+		float att_factor = (u_light_info.z - dist) / u_light_info.z;
+		att_factor = max(att_factor, 0);
+
+		if(int(u_light_info.x) == SPOT_LIGHT){
+			float cos_angle = dot(u_light_front, L);
+			if(cos_angle < u_light_cone.y){
+				att_factor = 0;
+			}
+			else if(cos_angle < u_light_cone.x){
+				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
+			}
+		}
+		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;		
+	}
+	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
+		float NdotL = dot(N, u_light_front);
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
+	}
+
+	if(int(u_light_info.x) == NO_LIGHT){
+		light = vec3(1.0);
+	}
+
+	vec4 color = vec4(0.0,0.0,0.0,1.0);
+	color.xyz = light * albedo.xyz;
+
+	FragColor = color;
+	gl_FragDepth = depth;
 }
