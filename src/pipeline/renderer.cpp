@@ -542,7 +542,6 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 		//only check spot and point because directional and ambient are global
 		if (type == eLightType::POINT || type == eLightType::SPOT) {
 			BoundingBox world_bounding = transformBoundingBox(rc->model, rc->mesh->box);
-			// TODO enhance spot light detection
 			if (cullLights(light, world_bounding))
 				continue;
 		}
