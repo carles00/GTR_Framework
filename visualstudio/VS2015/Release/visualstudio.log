@@ -1,20 +1,6 @@
-﻿  application.cpp
-  editor.cpp
-  main.cpp
-  light.cpp
-  renderer.cpp
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(104,1): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'class' ahora se ve usando 'struct' (compilando archivo de origen ..\..\src\pipeline\light.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON' (compilando archivo de origen ..\..\src\pipeline\light.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\light.cpp(14,21): warning C4305: '=': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\light.cpp(15,21): warning C4305: '=': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\scene.h(12,12): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class' (compilando archivo de origen ..\..\src\application.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON' (compilando archivo de origen ..\..\src\application.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\scene.h(12,12): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class' (compilando archivo de origen ..\..\src\main.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON' (compilando archivo de origen ..\..\src\main.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\application.cpp(82,14): warning C4244: 'inicializando': conversión de 'double' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\application.cpp(83,20): warning C4244: 'inicializando': conversión de 'double' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(104,1): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'class' ahora se ve usando 'struct' (compilando archivo de origen ..\..\src\pipeline\renderer.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON' (compilando archivo de origen ..\..\src\pipeline\renderer.cpp)
+﻿  renderer.cpp
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(104,1): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'class' ahora se ve usando 'struct'
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON'
 C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(48,53): warning C4244: 'argumento': conversión de 'float' a 'int'; posible pérdida de datos
 C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(48,33): warning C4244: 'argumento': conversión de 'float' a 'int'; posible pérdida de datos
 C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(71,20): warning C4018: '<': no coinciden signed/unsigned
@@ -120,53 +106,14 @@ C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(656,23):
           [
               T=float
           ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\scene.h(12,12): warning C4099: 'cJSON': nombre de tipo visto anteriormente usando 'struct' ahora se ve usando 'class' (compilando archivo de origen ..\..\src\editor.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\extra\cJSON.h(103,16): message : vea la declaración de 'cJSON' (compilando archivo de origen ..\..\src\editor.cpp)
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(116,33): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(133,33): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(140,18): warning C4244: 'inicializando': conversión de 'T' a 'int'; posible pérdida de datos
-          with
-          [
-              T=float
-          ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(143,36): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(144,61): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(144,34): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(201,3): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(289,33): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(304,39): warning C4244: '=': conversión de 'T' a 'int'; posible pérdida de datos
-          with
-          [
-              T=float
-          ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(306,56): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(306,54): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(320,2): warning C4996: 'strcpy': This function or variable may be unsafe. Consider using strcpy_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(358,84): warning C4305: 'argumento': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(372,74): warning C4305: 'argumento': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(408,34): warning C4244: 'argumento': conversión de 'double' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(408,27): warning C4244: 'argumento': conversión de 'T' a 'int'; posible pérdida de datos
-          with
-          [
-              T=float
-          ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(408,19): warning C4244: 'argumento': conversión de 'T' a 'int'; posible pérdida de datos
-          with
-          [
-              T=float
-          ]
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(431,25): warning C4244: 'argumento': conversión de 'double' a 'float'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(524,22): warning C4018: '<': no coinciden signed/unsigned
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(545,93): warning C4305: 'argumento': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(550,84): warning C4305: 'argumento': truncamiento de 'double' a 'float'
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(570,10): warning C4244: 'inicializando': conversión de 'float' a 'int'; posible pérdida de datos
-C:\Users\charl\Documents\GitHub\GTR_Framework\src\editor.cpp(572,86): warning C4244: 'argumento': conversión de 'int' a 'float'; posible pérdida de datos
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(674,29): warning C4244: 'inicializando': conversión de 'double' a 'float'; posible pérdida de datos
      Creando biblioteca ..\..\GTR.lib y objeto ..\..\GTR.exp
 LINK : warning LNK4098: la biblioteca predeterminada'LIBCMT' entra en conflicto con otras bibliotecas; use la biblioteca /NODEFAULTLIB:biblioteca
   Generando código
-  29 of 5879 functions ( 0.5%) were compiled, the rest were copied from previous compilation.
+C:\Users\charl\Documents\GitHub\GTR_Framework\src\pipeline\renderer.cpp(666): warning C4715: 'SCN::Renderer::cullLights': no todas las rutas de acceso de control devuelven un valor
+  4 of 5881 functions (<0.1%) were compiled, the rest were copied from previous compilation.
     0 functions were new in current compilation
-    70 functions had inline decision re-evaluated but remain unchanged
+    115 functions had inline decision re-evaluated but remain unchanged
   Generación de código finalizada
 glew32s.lib(glew.obj) : warning LNK4099: no se encontró PDB '' con 'glew32s.lib(glew.obj)' o en ''; se vinculará el objeto sin tener en cuenta información de depuración
   visualstudio.vcxproj -> C:\Users\charl\Documents\GitHub\GTR_Framework\GTR.exe

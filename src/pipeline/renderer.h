@@ -25,7 +25,10 @@ namespace SCN {
 		LIGHTS_MULTIPASS,
 		LIGHTS_SINGLEPASS
 	};
-
+	
+	struct sLightsContainer {
+		std::vector<LightEntity*> lights;
+	};
 
 	// This class is in charge of rendering anything in our system.
 	// Separating the render from anything else makes the code cleaner
@@ -87,6 +90,8 @@ namespace SCN {
 		void singlePass(RenderCall* rc, GFX::Shader* shader);
 		void multiPass(RenderCall* rc, GFX::Shader* shader);
 		void generateShadowmaps();
+		bool cullLights(LightEntity* light, BoundingBox bb);
+		bool spotLightAABB(LightEntity* light, BoundingBox bb);
 
 		//debug
 		void showShadowmaps();

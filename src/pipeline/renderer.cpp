@@ -527,7 +527,7 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 
 //Render function for multipass shader
 void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
-
+	// TODO BUG when there is no Directional light and no spotlight, everything that is not touched by a spot light does not rendered, but it should 
 	if (lights.size() == 0) {
 		shader->setUniform("u_light_info", vec4(int(eLightType::NO_LIGHT), 0, 0, 0));
 		rc->mesh->render(GL_TRIANGLES);
@@ -538,12 +538,12 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 	{
 		//if distance from light is too big, continue
 		LightEntity* light = lights[i];
+		eLightType type = light->light_type;
 		//only check spot and point because directional and ambient are global
-		if (light->light_type == eLightType::SPOT || light->light_type == eLightType::POINT) {
+		if (type == eLightType::POINT || type == eLightType::SPOT) {
 			BoundingBox world_bounding = transformBoundingBox(rc->model, rc->mesh->box);
-			if (!BoundingBoxSphereOverlap(world_bounding, light->root.model.getTranslation(), light->max_distance)) {
+			if (cullLights(light, world_bounding))
 				continue;
-			}
 		}
 
 		shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
@@ -654,6 +654,29 @@ void Renderer::showShadowmaps() {
 	
 	vec2 size = CORE::getWindowSize();
 	glViewport(0, 0, size.x, size.y);
+}
+bool Renderer::cullLights(LightEntity* light, BoundingBox bb) {
+
+	eLightType type = light->light_type;
+	if (type == eLightType::POINT )
+		return !BoundingBoxSphereOverlap(bb, light->root.model.getTranslation(), light->max_distance);
+	if (type == eLightType::SPOT) {
+		return !spotLightAABB(light, bb);
+	}
+}
+
+bool Renderer::spotLightAABB(LightEntity* light, BoundingBox bb) {
+	float sphereRadius = max(bb.halfsize.x * 2.0f, bb.halfsize.z * 2.0f);
+	vec3 v = bb.center - light->root.model.getTranslation();
+	float lenSq = dot(v, v);
+	float v1Len = dot(v, light->root.model.rotateVector(vec3(0, 0, -1)));
+	
+	float distanceClosestPoint = cos(light->cone_info.y * DEG2RAD) * sqrt(lenSq - v1Len * v1Len) - v1Len * sin(light->cone_info.y * DEG2RAD);
+	bool angleCull = distanceClosestPoint > sphereRadius;
+	bool frontCull = v1Len > sphereRadius + light->max_distance;
+	bool backCull = v1Len < -sphereRadius;
+
+	return !(angleCull || frontCull || backCull);
 }
 
 
