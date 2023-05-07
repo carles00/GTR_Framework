@@ -679,22 +679,47 @@ bool Renderer::spotLightAABB(LightEntity* light, BoundingBox bb) {
 	return !(angleCull || frontCull || backCull);
 }
 
+//Switch widget extracted from: https://github.com/ocornut/imgui/issues/1537#issuecomment-780262461
+void ToggleButton(const char* label, bool* v)
+{
+	ImGui::Text(label);
+	ImGui::SameLine();
+	ImVec4* colors = ImGui::GetStyle().Colors;
+	ImVec2 p = ImGui::GetCursorScreenPos();
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+	const char* str_id = "";
 
+	float height = ImGui::GetFrameHeight();
+	float width = height * 1.55f;
+	float radius = height * 0.50f;
+
+	ImGui::InvisibleButton(str_id, ImVec2(width, height));
+	if (ImGui::IsItemClicked()) *v = !*v;
+	ImGuiContext& gg = *GImGui;
+	float ANIM_SPEED = 0.085f;
+	if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id))// && g.LastActiveIdTimer < ANIM_SPEED)
+		float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
+	if (ImGui::IsItemHovered())
+		draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? colors[ImGuiCol_ButtonActive] : ImVec4(0.78f, 0.78f, 0.78f, 1.0f)), height * 0.5f);
+	else
+		draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? colors[ImGuiCol_Button] : ImVec4(0.85f, 0.85f, 0.85f, 1.0f)), height * 0.50f);
+	draw_list->AddCircleFilled(ImVec2(p.x + radius + (*v ? 1 : 0) * (width - radius * 2.0f), p.y + radius), radius - 1.5f, IM_COL32(255, 255, 255, 255));
+}
 #ifndef SKIP_IMGUI
 
 void Renderer::showUI()
 {
 		
-	ImGui::Checkbox("Wireframe", &render_wireframe);
-	ImGui::Checkbox("Boundaries", &render_boundaries);
+	ToggleButton("Wireframe", &render_wireframe);
+	ToggleButton("Boundaries", &render_boundaries);
 
 	//add here your stuff
-	ImGui::Checkbox("Render Priority", &enable_render_priority);
-	ImGui::Checkbox("Normal Map", &enable_normal_map);
-	ImGui::Checkbox("Occlusion", &enable_occ);
-	ImGui::Checkbox("Specular", &enable_specular);
-	ImGui::Checkbox("Shadows", &enable_shadows);
-	ImGui::Checkbox("Show Shadow Atlas", &show_shadowmaps);
+	ToggleButton("Render Priority", &enable_render_priority);
+	ToggleButton("Normal Map", &enable_normal_map);
+	ToggleButton("Occlusion", &enable_occ);
+	ToggleButton("Specular", &enable_specular);
+	ToggleButton("Shadows", &enable_shadows);
+	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0", 4);
 }
 
