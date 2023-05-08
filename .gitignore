@@ -34,9 +34,7 @@
 
 /.vs
 /visualstudio/.vs
-visualstudio/VS2015/Debug
-visualstudio/VS2015/Release
-visualstudio/VS2015/Final
+visualstudio/VS2015/*
 *.iobj
 *.pdb
 *.ipdb
@@ -50,6 +48,4 @@ visualstudio/VS2015/Final
 *.idb
 *.idb
 *.pdb
-visualstudio/VS2015/Debug/vc142.idb
-visualstudio/VS2015/Debug/vc142.idb
-visualstudio/VS2015/Release/vc142.pdb
+
