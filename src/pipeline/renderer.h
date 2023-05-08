@@ -23,7 +23,8 @@ namespace SCN {
 		FLAT,
 		TEXTURED,
 		LIGHTS_MULTIPASS,
-		LIGHTS_SINGLEPASS
+		LIGHTS_SINGLEPASS,
+		DEFERRED
 	};
 	
 	struct sLightsContainer {
@@ -59,6 +60,7 @@ namespace SCN {
 		bool enable_occ;
 		bool enable_specular;
 		bool enable_shadows;
+		bool show_gbuffers;
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
@@ -86,6 +88,8 @@ namespace SCN {
 		//...
 		void renderFrame(Camera* camera);
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos);
+		void renderDeferred(Camera* camera);
+		void renderForward(Camera* camera);
 		void walkEntities(SCN::Node* node, Camera* camera);
 		void singlePass(RenderCall* rc, GFX::Shader* shader);
 		void multiPass(RenderCall* rc, GFX::Shader* shader);
@@ -93,11 +97,15 @@ namespace SCN {
 		bool cullLights(LightEntity* light, BoundingBox bb);
 		bool spotLightAABB(LightEntity* light, BoundingBox bb);
 
+		void renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera);
+
 		//debug
 		void showShadowmaps();
 		
 		//renders several elements of the scene
 		void renderScene(SCN::Scene* scene, Camera* camera);
+
+		void renderSceneNodes(Camera* camera);
 
 		//render the skybox
 		void renderSkybox(GFX::Texture* cubemap);
@@ -113,6 +121,7 @@ namespace SCN {
 		void showUI();
 
 		void cameraToShader(Camera* camera, GFX::Shader* shader); //sends camera uniforms to shader
+		void lightToShader(LightEntity* light, GFX::Shader* shader);
 	};
 
 };
