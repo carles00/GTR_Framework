@@ -630,11 +630,11 @@ in vec2 v_uv;
 in vec4 v_color;
 
 uniform vec4 u_color;
-uniform sampler2D u_texture;
+uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
-uniform float u_emissive_factor;
+uniform vec3 u_emissive_factor;
 
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 NormalColor;
@@ -643,16 +643,15 @@ layout(location = 2) out vec4 ExtraColor;
 
 void main()
 {
-	vec2 uv = v_uv;
 	vec4 color = u_color;
-	color *= texture( u_texture, v_uv );
+	color *= texture( u_albedo_texture, v_uv );
+	
+	if(color.a < u_alpha_cutoff)
+		discard;
 
 	vec3 N = normalize(v_normal);
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
-
-	if(color.a < u_alpha_cutoff)
-		discard;
 
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
@@ -708,6 +707,7 @@ uniform sampler2D u_depth_texture;
 
 uniform mat4 u_ivp;
 uniform vec2 u_iRes;
+uniform vec3 u_ambient_light;
 
 #include "lights"
 
@@ -728,7 +728,7 @@ void main()
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
 
 	vec4 albedo = texture( u_albedo_texture, v_uv );
-	//vec4 extra = texture( u_extra_texture, v_uv );
+	vec4 extra = texture( u_extra_texture, v_uv );
 	vec4 normal_info = texture( u_normal_texture, v_uv );
 	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
 

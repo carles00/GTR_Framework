@@ -538,7 +538,7 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 
 	glDepthFunc(GL_LESS);
 
-	glBlendFunc(GL_SRC0_ALPHA, GL_ONE);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
 	//disable shader
 	shader->disable();
@@ -684,7 +684,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	quad_shader->setUniform("u_ambient_light", scene->ambient_light);
 
-	//quad->render(GL_TRIANGLES);
+	quad->render(GL_TRIANGLES);
 
 	GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
 	light_shader->enable();
@@ -698,27 +698,30 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	vec3 ambient = scene->ambient_light;
 	for (auto light : lights) {
-
+		
 		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
+		light_shader->setUniform("u_ambient_light", ambient);
 		lightToShader(light, light_shader);
 		quad->render(GL_TRIANGLES);
-
+		ambient = vec3(0.0f); 
+		
 	}
 	glDisable(GL_BLEND);
 
 	//TODO: Create sphere for lights
-	//glEnable(GL_DEPTH_TEST);
-	//glDepthFunc(GL_LESS);
-	//GFX::Shader* shader = GFX::Shader::Get("flat");
-	//shader->enable();
-	//Matrix44 model;
-	//model.scale(10, 10, 10);
-	//shader->setUniform("u_model", model);
-	//shader->setUniform("u_color", vec4(1.0,0.0,0.0,1.0));
-	//cameraToShader(camera, shader);
-	//sphere.render(GL_TRIANGLES);
+	/*glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_LESS);
+	GFX::Shader* shader = GFX::Shader::Get("flat");
+	shader->enable();
+	Matrix44 model;
+	model.scale(10, 10, 10);
+	shader->setUniform("u_model", model);
+	shader->setUniform("u_color", vec4(1.0,0.0,0.0,1.0));
+	cameraToShader(camera, shader);
+	sphere.render(GL_TRIANGLES);*/
 
 	if (show_gbuffers)
 	{
@@ -764,6 +767,7 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 
 	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
 	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
+	GFX::Texture* normal_texture = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
 
 	//select the blending
 	glDisable(GL_BLEND);
@@ -797,7 +801,9 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
-	shader->setUniform("u_alpha_cutoff", rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f);
+	if(normal_texture)
+		shader->setUniform("u_normal_texture", normal_texture, 2);
+	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
@@ -919,9 +925,9 @@ void Renderer::showUI()
 	ToggleButton("Specular", &enable_specular);
 	ToggleButton("Shadows", &enable_shadows);
 	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
-  ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
+	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
-		ImGui::Checkbox("Show all buffers", &show_gbuffers);
+		ToggleButton("Show all buffers", &show_gbuffers);
 }
 
 #else
