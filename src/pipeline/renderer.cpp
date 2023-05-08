@@ -677,6 +677,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	GFX::Shader* quad_shader = GFX::Shader::Get("deferred_global");
 	quad_shader->enable();
 
+	
 	quad_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	quad_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
 	quad_shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
@@ -688,7 +689,6 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
 	light_shader->enable();
-
 	light_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	light_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
 	light_shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
@@ -711,7 +711,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	}
 	glDisable(GL_BLEND);
 
-	//TODO: Create sphere for lights
+	//TODO: Create sphere for  every light
+	// such that renders only the parts INSIDE the mesh
 	/*glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	GFX::Shader* shader = GFX::Shader::Get("flat");
@@ -796,7 +797,7 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	cameraToShader(camera, shader);
 	float t = getTime();
 	shader->setUniform("u_time", t);
-
+	//TODO: normalmaps with flags
 	shader->setUniform("u_color", rc->material->color);
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
