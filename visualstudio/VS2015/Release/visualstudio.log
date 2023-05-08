@@ -12,66 +12,88 @@ E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(183,117): warning C4244:
               T=float
           ]
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(183,86): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(183,54): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(183,23): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(184,116): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(184,85): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(184,53): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(184,22): warning C4244: 'argumento': conversión de 'T' a 'GLint'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(261,20): warning C4018: '<': no coinciden signed/unsigned
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(359,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(489,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(560,20): warning C4018: '<': no coinciden signed/unsigned
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(604,9): warning C4018: '<': no coinciden signed/unsigned
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(607,36): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(612,66): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(612,31): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(616,48): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
+
           with
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(651,36): warning C4244: 'argumento': conversión de 'T' a 'int'; posible pérdida de datos
+
           with
           [
               T=float
@@ -81,6 +103,7 @@ E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(651,28): warning C4244: 
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(704,61): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
           with
           [
@@ -91,6 +114,7 @@ E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(704,47): warning C4244: 
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(730,40): warning C4244: 'argumento': conversión de 'float' a 'GLsizei'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(730,29): warning C4244: 'argumento': conversión de 'float' a 'GLsizei'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(730,17): warning C4244: 'argumento': conversión de 'float' a 'GLint'; posible pérdida de datos
@@ -104,6 +128,7 @@ E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(736,39): warning C4244: 
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(736,28): warning C4244: 'argumento': conversión de 'float' a 'GLsizei'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(736,14): warning C4244: 'argumento': conversión de 'float' a 'GLint'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(741,32): warning C4244: 'argumento': conversión de 'T' a 'GLsizei'; posible pérdida de datos
+
           with
           [
               T=float
@@ -113,12 +138,9 @@ E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(741,24): warning C4244: 
           [
               T=float
           ]
+
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(793,10): warning C4244: 'inicializando': conversión de 'long' a 'float'; posible pérdida de datos
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(823,52): warning C4244: 'argumento': conversión de 'int' a 'T'; posible pérdida de datos
-          with
-          [
-              T=float
-          ]
 E:\uni\ACG\Lab1\GTR_Framework\src\pipeline\renderer.cpp(828,81): warning C4244: 'argumento': conversión de 'double' a 'T'; posible pérdida de datos
           with
           [
