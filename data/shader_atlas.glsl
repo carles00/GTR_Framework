@@ -277,6 +277,35 @@ float testShadow(vec3 pos)
 }
 
 
+\normal_functions
+
+mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
+{
+  // get edge vectors of the pixel triangle
+  vec3 dp1 = dFdx(p);
+  vec3 dp2 = dFdy(p);
+  vec2 duv1 = dFdx(uv);
+  vec2 duv2 = dFdy(uv);
+
+  // solve the linear system
+  vec3 dp2perp = cross(dp2, N);
+  vec3 dp1perp = cross(N, dp1);
+  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
+  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
+
+  // construct a scale-invariant frame 
+  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
+  return mat3(normalize(T * invmax), normalize(B * invmax), N);
+}
+
+vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
+{
+	normal_pixel = normal_pixel * 255./127. - 128./127.;
+	mat3 TBN = cotangent_frame(N, WP, uv);
+	return normalize(TBN * normal_pixel);
+}
+
+
 \light_multipass.fs
 
 #version 330 core
@@ -305,35 +334,11 @@ uniform float u_alpha_cutoff;
 uniform vec3 u_ambient;
 
 #include "lights"
+#include "normal_functions"
 
 out vec4 FragColor;
 
 
-mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
-{
-  // get edge vectors of the pixel triangle
-  vec3 dp1 = dFdx(p);
-  vec3 dp2 = dFdy(p);
-  vec2 duv1 = dFdx(uv);
-  vec2 duv2 = dFdy(uv);
-
-  // solve the linear system
-  vec3 dp2perp = cross(dp2, N);
-  vec3 dp1perp = cross(N, dp1);
-  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-  // construct a scale-invariant frame 
-  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
-  return mat3(normalize(T * invmax), normalize(B * invmax), N);
-}
-
-vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
-{
-	normal_pixel = normal_pixel * 255./127. - 128./127.;
-	mat3 TBN = cotangent_frame(N, WP, uv);
-	return normalize(TBN * normal_pixel);
-}
 
 void main()
 {
@@ -469,6 +474,8 @@ uniform vec4 u_shadow_region[MAX_LIGHTS];
 uniform mat4 u_shadow_viewproj[MAX_LIGHTS];
 uniform sampler2D u_shadowmap;
 
+#include "normal_functions"
+
 out vec4 FragColor;
 
 float testShadow(vec3 pos, int i)
@@ -510,31 +517,6 @@ float testShadow(vec3 pos, int i)
 	return shadow_factor;
 }
 
-mat3 cotangent_frame(vec3 N, vec3 p, vec2 uv)
-{
-  // get edge vectors of the pixel triangle
-  vec3 dp1 = dFdx(p);
-  vec3 dp2 = dFdy(p);
-  vec2 duv1 = dFdx(uv);
-  vec2 duv2 = dFdy(uv);
-
-  // solve the linear system
-  vec3 dp2perp = cross(dp2, N);
-  vec3 dp1perp = cross(N, dp1);
-  vec3 T = dp2perp * duv1.x + dp1perp * duv2.x;
-  vec3 B = dp2perp * duv1.y + dp1perp * duv2.y;
-
-  // construct a scale-invariant frame 
-  float invmax = 1.0 / sqrt(max(dot(T,T), dot(B,B)));
-  return mat3(normalize(T * invmax), normalize(B * invmax), N);
-}
-
-vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
-{
-	normal_pixel = normal_pixel * 255./127. - 128./127.;
-	mat3 TBN = cotangent_frame(N, WP, uv);
-	return normalize(TBN * normal_pixel);
-}
 
 void main()
 {
@@ -630,11 +612,14 @@ in vec2 v_uv;
 in vec4 v_color;
 
 uniform vec4 u_color;
-uniform sampler2D u_texture;
+uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
+uniform sampler2D u_normal_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
-uniform float u_emissive_factor;
+uniform vec3 u_emissive_factor;
+
+#include "normal_functions"
 
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 NormalColor;
@@ -643,16 +628,15 @@ layout(location = 2) out vec4 ExtraColor;
 
 void main()
 {
-	vec2 uv = v_uv;
 	vec4 color = u_color;
-	color *= texture( u_texture, v_uv );
+	color *= texture( u_albedo_texture, v_uv );
+	
+	if(color.a < u_alpha_cutoff)
+		discard;
 
 	vec3 N = normalize(v_normal);
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
-
-	if(color.a < u_alpha_cutoff)
-		discard;
 
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
@@ -708,6 +692,7 @@ uniform sampler2D u_depth_texture;
 
 uniform mat4 u_ivp;
 uniform vec2 u_iRes;
+uniform vec3 u_ambient_light;
 
 #include "lights"
 
@@ -728,7 +713,7 @@ void main()
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
 
 	vec4 albedo = texture( u_albedo_texture, v_uv );
-	//vec4 extra = texture( u_extra_texture, v_uv );
+	vec4 extra = texture( u_extra_texture, v_uv );
 	vec4 normal_info = texture( u_normal_texture, v_uv );
 	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
 

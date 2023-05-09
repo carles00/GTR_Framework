@@ -49,3 +49,4 @@ visualstudio/VS2015/*
 *.idb
 *.pdb
 
+imgui.ini
