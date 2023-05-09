@@ -22,9 +22,6 @@ using namespace SCN;
 
 //some globals
 GFX::Mesh sphere;
-GFX::FBO* gbuffers_fbo = nullptr;
-GFX::FBO* illumination_fbo = nullptr;
-
 
 Renderer::Renderer(const char* shader_atlas_filename)
 {
@@ -41,6 +38,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 	scene = nullptr;
 	skybox_cubemap = nullptr;
+	gbuffers_fbo = nullptr;
+	illumination_fbo = nullptr;
+
 	render_order = std::vector<RenderCall>();
 	lights = std::vector<LightEntity*>();
 	shadow_atlas_width = 4096;
@@ -203,8 +203,6 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	
 	setupScene(camera);
 
-	
-
 	//render entities
 	renderFrame(camera);
 
@@ -252,8 +250,6 @@ void SCN::Renderer::renderForward(Camera* camera) {
 	
 	//call renderMeshWithMaterial depending on rendermode
 	renderSceneNodes(camera);
-	//once done empty render_order
-	
 }
 
 void Renderer::renderSceneNodes(Camera* camera) {
