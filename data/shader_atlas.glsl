@@ -612,6 +612,7 @@ in vec2 v_uv;
 in vec4 v_color;
 
 uniform vec4 u_color;
+uniform vec4 u_texture_flags; //normal, occlusion, specular
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_normal_texture;
@@ -635,6 +636,11 @@ void main()
 		discard;
 
 	vec3 N = normalize(v_normal);
+	if(u_texture_flags.x == 1){
+		vec3 normal_pixel = texture( u_normal_texture, v_uv ).xyz;
+		N = perturbNormal(N,v_world_position, v_uv, normal_pixel);
+	}
+	
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
 
