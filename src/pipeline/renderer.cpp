@@ -127,7 +127,10 @@ void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Mater
 	rc.mesh = mesh;
 	rc.material = material;
 	rc.distance_to_camera = nodepos.distance(camera_pos);
-	render_order.push_back(rc);
+	if (material->alpha_mode != eAlphaMode::BLEND)
+		render_order.push_back(rc);
+	else
+		render_order_alpha.push_back(rc);
 }
 
 //Generates shadowmaps for each light that casts a shadow, renders to shadow_atlas_fbo
@@ -208,6 +211,7 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 
 	//clear render_order after all rendering is finished
 	render_order.clear();
+	render_order_alpha.clear();
 
 	if (show_shadowmaps)
 		showShadowmaps();
@@ -245,11 +249,16 @@ void SCN::Renderer::renderForward(Camera* camera) {
 		renderSkybox(skybox_cubemap);
 
 	//order render_order for priority rendering
-	if(enable_render_priority)
+	if (enable_render_priority) {
 		std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort);
+		std::sort(render_order_alpha.begin(), render_order_alpha.end(), RenderCall::render_call_alpha_sort);
+	}
+		
 	
 	//call renderMeshWithMaterial depending on rendermode
 	renderSceneNodes(camera);
+
+	renderAlphaObjects(camera);
 }
 
 void Renderer::renderSceneNodes(Camera* camera) {
@@ -464,10 +473,10 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 	glEnable(GL_DEPTH_TEST);
 
 	//chose a shader
-	if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS ) {
 		shader = GFX::Shader::Get("light_multipass");
 	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) {
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS || render_mode == eRenderMode::DEFERRED) {//deferred for when we call from renderDeferred
 		shader = GFX::Shader::Get("light_singlepass");
 	}
 	
@@ -527,7 +536,7 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 	if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
 		multiPass(rc, shader);
 	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) {
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS || render_mode == eRenderMode::DEFERRED) { //deferred for when we call from renderDeferred
 		singlePass(rc, shader);
 	}
 	
@@ -648,7 +657,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	}
 	gbuffers_fbo->bind();
-	//Renderingi inside the gBuffer
+	//Rendering inside the gBuffer
 	{
 		/*gbuffers_fbo->enableBuffers(true, false, false, false);*/
 		glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
@@ -696,20 +705,19 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 	vec3 ambient = scene->ambient_light;
 	for (auto light : lights) {
-		
-		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
-		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
-		light_shader->setUniform("u_ambient_light", ambient);
-		lightToShader(light, light_shader);
-		quad->render(GL_TRIANGLES);
-		ambient = vec3(0.0f); 
-		
+		if (light->light_type == eLightType::DIRECTIONAL) {
+			light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
+			lightToShader(light, light_shader);
+			quad->render(GL_TRIANGLES);
+			ambient = vec3(0.0f);
+		}
 	}
 	glDisable(GL_BLEND);
 
 	//TODO: Create sphere for  every light
 	// such that renders only the parts INSIDE the mesh
-	/*glEnable(GL_DEPTH_TEST);
+	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_LESS);
 	GFX::Shader* shader = GFX::Shader::Get("flat");
 	shader->enable();
@@ -718,7 +726,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	shader->setUniform("u_model", model);
 	shader->setUniform("u_color", vec4(1.0,0.0,0.0,1.0));
 	cameraToShader(camera, shader);
-	sphere.render(GL_TRIANGLES);*/
+	sphere.render(GL_TRIANGLES);
 
 	if (show_gbuffers)
 	{
@@ -741,9 +749,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		glViewport(0, 0, size.x, size.y);
 		deph_shader->disable();
 	}
-	//compute the illumination
-
-
+	//TODO Fix deferred Render Alpha nodes
+	renderAlphaObjects(camera);
 }
 void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 {
@@ -765,6 +772,7 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
 	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
 	GFX::Texture* normal_texture = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
+	GFX::Texture* occ_met_rough_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
 
 	//select the blending
 	glDisable(GL_BLEND);
@@ -796,16 +804,22 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	//TODO: normalmaps with flags
 	vec4 texture_flags = vec4(0, 0, 0, 0); //normal, occlusion, specular
 	
+	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 	shader->setUniform("u_color", rc->material->color);
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
+	
 	if (normal_texture && enable_normal_map) {
 		texture_flags.x = 1;
 		shader->setUniform("u_normal_texture", normal_texture, 2);
 	}
-	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
-	
+	if (occ_met_rough_texture && enable_occ) {
+		texture_flags.y = 1;
+		shader->setUniform("u_occ_met_rough_texture", occ_met_rough_texture, 3);
+	}
+
+
 	shader->setUniform("u_texture_flags", texture_flags);
 
 	if (render_wireframe)
@@ -845,6 +859,12 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 	}
 }
 
+void Renderer::renderAlphaObjects(Camera* camera) {
+	for (int i = 0; i < render_order_alpha.size(); i++) {
+		renderMeshWithMaterialLight(&render_order_alpha[i], camera);
+	}
+}
+
 void Renderer::showShadowmaps() {
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
@@ -863,6 +883,7 @@ void Renderer::showShadowmaps() {
 	vec2 size = CORE::getWindowSize();
 	glViewport(0, 0, size.x, size.y);
 }
+
 bool Renderer::cullLights(LightEntity* light, BoundingBox bb) {
 
 	eLightType type = light->light_type;

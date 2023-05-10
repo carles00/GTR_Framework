@@ -10,6 +10,7 @@ gbuffers basic.vs gbuffers.fs
 
 deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
+deferred_ws basic.vs deferred_light.fs
 
 \basic.vs
 
@@ -616,6 +617,7 @@ uniform vec4 u_texture_flags; //normal, occlusion, specular
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_normal_texture;
+uniform sampler2D u_occ_met_rough_texture;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_emissive_factor;
@@ -640,13 +642,17 @@ void main()
 		vec3 normal_pixel = texture( u_normal_texture, v_uv ).xyz;
 		N = perturbNormal(N,v_world_position, v_uv, normal_pixel);
 	}
-	
+	//occlusion
+	float occ_fact = 1.0;
+	if(u_texture_flags.y == 1){
+		float occ_fact = texture( u_occ_met_rough_texture, v_uv ).x;
+	}
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
 
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
-	ExtraColor = vec4(emissive, 1.0);
+	ExtraColor = vec4(emissive, occ_fact);
 }
 
 \deferred_global.fs
@@ -698,7 +704,6 @@ uniform sampler2D u_depth_texture;
 
 uniform mat4 u_ivp;
 uniform vec2 u_iRes;
-uniform vec3 u_ambient_light;
 
 #include "lights"
 
@@ -731,6 +736,7 @@ void main()
 	//store light
 	vec3 light = vec3(0.0);
 	
+
 	
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - world_position;
@@ -763,7 +769,7 @@ void main()
 	}
 
 	vec4 color = vec4(0.0,0.0,0.0,1.0);
-	color.xyz = light * albedo.xyz;
+	color.xyz = light * albedo.xyz *extra.w;
 
 	FragColor = color;
 	gl_FragDepth = depth;
