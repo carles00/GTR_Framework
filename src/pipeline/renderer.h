@@ -40,9 +40,12 @@ namespace SCN {
 		Matrix44 model;
 		
 		static bool render_call_sort(RenderCall a, RenderCall b) {
-			return (a.material->alpha_mode < b.material->alpha_mode);
+			return (a.distance_to_camera < b.distance_to_camera);
 		}
-		//&& a.material->alpha_mode != SCN::eAlphaMode::BLEND && b.material->alpha_mode == SCN::eAlphaMode::BLEND
+		static bool render_call_alpha_sort(RenderCall a, RenderCall b) {
+			return (a.distance_to_camera > b.distance_to_camera);
+		}
+
 
 		float distance_to_camera;
 	};
@@ -79,6 +82,7 @@ namespace SCN {
 		SCN::Scene* scene;
 		//render calls vector
 		std::vector<RenderCall> render_order;
+		std::vector<RenderCall> render_order_alpha;
 		std::vector<LightEntity*> lights;
 
 		//updated every frame
@@ -99,8 +103,8 @@ namespace SCN {
 		void generateShadowmaps();
 		bool cullLights(LightEntity* light, BoundingBox bb);
 		bool spotLightAABB(LightEntity* light, BoundingBox bb);
-
 		void renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera);
+		void renderAlphaObjects(Camera* camera);
 
 		//debug
 		void showShadowmaps();
