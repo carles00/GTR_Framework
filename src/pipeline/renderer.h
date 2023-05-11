@@ -57,7 +57,6 @@ namespace SCN {
 		bool render_wireframe;
 		bool render_boundaries;
 		bool show_shadowmaps;
-		bool enable_render_priority;
 		eRenderMode render_mode;
 		bool enable_normal_map;
 		bool enable_occ;
