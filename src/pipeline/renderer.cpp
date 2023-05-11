@@ -28,7 +28,6 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	render_wireframe = false;
 	render_boundaries = false;
 	show_shadowmaps = false;
-	enable_render_priority = true;
 	render_mode = eRenderMode::DEFERRED;
 	enable_normal_map = true;
 	enable_occ = true;
@@ -88,6 +87,10 @@ void Renderer::setupScene(Camera* camera)
 			lights.push_back((SCN::LightEntity*)ent);
 		}
 	}
+
+	//order render_order for priority rendering
+	std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort); //front to back
+	std::sort(render_order_alpha.begin(), render_order_alpha.end(), RenderCall::render_call_alpha_sort); //back to front
 
 	if(enable_shadows)
 		generateShadowmaps();
@@ -248,12 +251,7 @@ void SCN::Renderer::renderForward(Camera* camera) {
 	if (skybox_cubemap && render_mode != eRenderMode::FLAT)
 		renderSkybox(skybox_cubemap);
 
-	//order render_order for priority rendering
-	if (enable_render_priority) {
-		std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort);
-		std::sort(render_order_alpha.begin(), render_order_alpha.end(), RenderCall::render_call_alpha_sort);
-	}
-		
+	
 	
 	//call renderMeshWithMaterial depending on rendermode
 	renderSceneNodes(camera);
@@ -692,6 +690,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	quad->render(GL_TRIANGLES);
 
+	//lights
 	GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
 	light_shader->enable();
 	light_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
@@ -711,22 +710,64 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			lightToShader(light, light_shader);
 			quad->render(GL_TRIANGLES);
 			ambient = vec3(0.0f);
+			light_shader->setUniform("u_ambient", vec3(0.0));
 		}
 	}
-	glDisable(GL_BLEND);
+	light_shader->disable();
+
+	
 
 	//TODO: Create sphere for  every light
 	// such that renders only the parts INSIDE the mesh
+	GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
+	shader_spheres->enable();
+
+	if (!illumination_fbo) {
+		illumination_fbo = new GFX::FBO();
+		illumination_fbo->create(size.x, size.y, 1, GL_RGB, GL_UNSIGNED_BYTE, true);
+	}
+
+	illumination_fbo->bind();
+
+	//now we copy the gbuffers depth buffer to the binded depth buffer in the FBO
+	gbuffers_fbo->depth_texture->copyTo(NULL);
+	glClear(GL_COLOR_BUFFER_BIT);
+
+	shader_spheres->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
+	shader_spheres->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
+	shader_spheres->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
+	shader_spheres->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
+
 	glEnable(GL_DEPTH_TEST);
+	glDepthFunc(GL_GREATER);
+	glFrontFace(GL_CW);
+	glDepthMask(false);
+	for (auto light : lights) {
+		if (light->light_type == eLightType::POINT) {
+			Matrix44 model;
+			vec3 lightpos = light->root.model.getTranslation();
+			model.setTranslation(lightpos.x, lightpos.y, lightpos.z);
+			model.scale(light->max_distance, light->max_distance, light->max_distance);
+			shader_spheres->setUniform("u_model", model);
+			shader_spheres->setUniform("u_color", vec4(1.0, 0.0, 0.0, 1.0));
+			shader_spheres->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			shader_spheres->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
+			lightToShader(light, shader_spheres);
+			cameraToShader(camera, shader_spheres);
+			sphere.render(GL_TRIANGLES);
+		}
+	}
+
+	illumination_fbo->unbind();
+	shader_spheres->disable();
+	glDisable(GL_BLEND);
+	illumination_fbo->color_textures[0]->toViewport();
+	glFrontFace(GL_CCW);
+	glDisable(GL_BLEND);
 	glDepthFunc(GL_LESS);
-	GFX::Shader* shader = GFX::Shader::Get("flat");
-	shader->enable();
-	Matrix44 model;
-	model.scale(10, 10, 10);
-	shader->setUniform("u_model", model);
-	shader->setUniform("u_color", vec4(1.0,0.0,0.0,1.0));
-	cameraToShader(camera, shader);
-	sphere.render(GL_TRIANGLES);
+	glDepthMask(true);
+
+	
 
 	if (show_gbuffers)
 	{
@@ -943,12 +984,12 @@ void Renderer::showUI()
 	ToggleButton("Boundaries", &render_boundaries);
 
 	//add here your stuff
-	ToggleButton("Render Priority", &enable_render_priority);
 	ToggleButton("Normal Map", &enable_normal_map);
 	ToggleButton("Occlusion", &enable_occ);
 	ToggleButton("Specular", &enable_specular);
 	ToggleButton("Shadows", &enable_shadows);
-	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
+	if(enable_shadows)
+		ToggleButton("Show Shadow Atlas", &show_shadowmaps);
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
