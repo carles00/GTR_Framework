@@ -72,6 +72,9 @@ namespace SCN {
 		float shadowmap_height;
 
 		GFX::Texture* skybox_cubemap;
+		//deferred
+		GFX::FBO* gbuffers_fbo;
+		GFX::FBO* illumination_fbo;
 
 		SCN::Scene* scene;
 		//render calls vector

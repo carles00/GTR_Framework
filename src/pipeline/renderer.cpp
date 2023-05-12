@@ -22,9 +22,6 @@ using namespace SCN;
 
 //some globals
 GFX::Mesh sphere;
-GFX::FBO* gbuffers_fbo = nullptr;
-GFX::FBO* illumination_fbo = nullptr;
-
 
 Renderer::Renderer(const char* shader_atlas_filename)
 {
@@ -41,6 +38,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 	scene = nullptr;
 	skybox_cubemap = nullptr;
+	gbuffers_fbo = nullptr;
+	illumination_fbo = nullptr;
+
 	render_order = std::vector<RenderCall>();
 	lights = std::vector<LightEntity*>();
 	shadow_atlas_width = 4096;
@@ -203,8 +203,6 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	
 	setupScene(camera);
 
-	
-
 	//render entities
 	renderFrame(camera);
 
@@ -252,8 +250,6 @@ void SCN::Renderer::renderForward(Camera* camera) {
 	
 	//call renderMeshWithMaterial depending on rendermode
 	renderSceneNodes(camera);
-	//once done empty render_order
-	
 }
 
 void Renderer::renderSceneNodes(Camera* camera) {
@@ -798,13 +794,19 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	float t = getTime();
 	shader->setUniform("u_time", t);
 	//TODO: normalmaps with flags
+	vec4 texture_flags = vec4(0, 0, 0, 0); //normal, occlusion, specular
+	
 	shader->setUniform("u_color", rc->material->color);
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
-	if(normal_texture)
+	if (normal_texture && enable_normal_map) {
+		texture_flags.x = 1;
 		shader->setUniform("u_normal_texture", normal_texture, 2);
+	}
 	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
+	
+	shader->setUniform("u_texture_flags", texture_flags);
 
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
