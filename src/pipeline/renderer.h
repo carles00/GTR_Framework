@@ -61,6 +61,7 @@ namespace SCN {
 		bool enable_specular;
 		bool enable_shadows;
 		bool show_gbuffers;
+		bool pbr_is_active;
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;

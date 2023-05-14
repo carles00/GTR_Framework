@@ -35,6 +35,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	enable_specular = false;
 	enable_shadows = true;
 	show_gbuffers = false;
+	pbr_is_active = false;
 
 	scene = nullptr;
 	skybox_cubemap = nullptr;
@@ -651,9 +652,9 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	//Renderingi inside the gBuffer
 	{
 		/*gbuffers_fbo->enableBuffers(true, false, false, false);*/
+		gbuffers_fbo->enableAllBuffers();
 		glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
 		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-		//gbuffers_fbo->enableAllBuffers();
 		renderSceneNodes(camera);
 	}
 	gbuffers_fbo->unbind();
@@ -690,6 +691,12 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	light_shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
 	light_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
 
+	if (gbuffers_fbo->color_textures[3] && pbr_is_active)
+	{
+		light_shader->setTexture("u_metalic_roughness", gbuffers_fbo->color_textures[3], 4);
+		light_shader->setUniform("u_pbr_state", 1.0f);
+	}else
+		light_shader->setUniform("u_pbr_state", 0.0f);
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
@@ -700,6 +707,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 		light_shader->setUniform("u_ambient_light", ambient);
+		light_shader->setUniform("u_eye", camera->eye);
 		lightToShader(light, light_shader);
 		quad->render(GL_TRIANGLES);
 		ambient = vec3(0.0f); 
@@ -765,6 +773,7 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
 	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
 	GFX::Texture* normal_texture = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
+	GFX::Texture* metalness_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
 
 	//select the blending
 	glDisable(GL_BLEND);
@@ -800,10 +809,14 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
+	int textureSlot = 2;
 	if (normal_texture && enable_normal_map) {
 		texture_flags.x = 1;
-		shader->setUniform("u_normal_texture", normal_texture, 2);
+		shader->setUniform("u_normal_texture", normal_texture, textureSlot++);
 	}
+	if (metalness_texture)
+		shader->setUniform("u_metalic_roughness", metalness_texture, textureSlot++);
+
 	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 	
 	shader->setUniform("u_texture_flags", texture_flags);
@@ -928,6 +941,7 @@ void Renderer::showUI()
 	ToggleButton("Specular", &enable_specular);
 	ToggleButton("Shadows", &enable_shadows);
 	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
+	ToggleButton("Activate PBR", &pbr_is_active);
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
