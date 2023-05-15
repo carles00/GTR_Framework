@@ -327,6 +327,22 @@ const in vec3 f0)
 	return f0 + (vec3(1.0) - f0) * f;
 }
 
+// Fresnel term with scalar optimization(f90=1)
+float F_Schlick( const in float VoH, 
+const in float f0, const in float f90)
+{
+	float f = pow(1.0 - VoH, 5.0);
+	return f0 + (f90 - f0) * f;
+}
+
+// Fresnel term with colorized fresnel
+vec3 F_Schlick( const in float VoH, 
+const in vec3 f0, const in vec3 f90)
+{
+	float f = pow(1.0 - VoH, 5.0);
+	return f0 + (f90 - f0) * f;
+}
+
 // Geometry Term: Geometry masking/shadowing due to microfacets
 float GGX(float NdotV, float k){
 	return NdotV / (NdotV * (1.0 - k) + k);
@@ -375,9 +391,12 @@ const in float LoH,
 const in float linearRoughness)
 {
         float f90 = 0.5 + 2.0 * linearRoughness * LoH * LoH;
-		float lightScatter = F_Schlick(NoL, 1.0);
-        float viewScatter  = F_Schlick(NoV, 1.0);      
-        return lightScatter * viewScatter * RECIPROCAL_PI;
+		
+		float lightScatter = F_Schlick(NoL, 1.0, f90);
+		float viewScatter  = F_Schlick(NoV, 1.0, f90);      
+		return lightScatter * viewScatter * RECIPROCAL_PI;
+		
+		
 }
 
 
@@ -449,8 +468,8 @@ void main()
 		light += u_ambient;
 	}
 	
-	vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.y);
-	vec3 diffuseColor = (1.0 - metalic_roughness.y) * albedo.xyz;
+	vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.g);
+	vec3 diffuseColor = (1.0 - metalic_roughness.g) * albedo.xyz;
 
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - v_world_position;
@@ -462,9 +481,9 @@ void main()
 		float NdotH = dot(N, H);
 		float LdotH = dot(L, H);
 		//pbr
-		vec3 Fr_d = specularBRDF(metalic_roughness.z, f0, NdotH, NdotV, NdotL, LdotH);
+		vec3 Fr_d = specularBRDF(metalic_roughness.b, f0, NdotH, NdotV, NdotL, LdotH);
 			
-		float linearRoughness = metalic_roughness.z *metalic_roughness.z;
+		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
 		vec3 Fd_d = diffuseColor * Fd_Burley(NdotV,NdotL,LdotH,linearRoughness); 
 		
 		vec3 direct = Fr_d + Fd_d;
@@ -484,7 +503,8 @@ void main()
 		}
 		if(u_texture_flags.w == 0)
 			direct = vec3(1.0,1.0,1.0);
-		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor * direct;		
+		vec3 light_params = max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;
+		light += light_params * direct;
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 		float NdotL = dot(N, u_light_front);
@@ -830,10 +850,10 @@ void main()
 	//store light
 	vec3 light = vec3(0.0);
 	//we compute the reflection in base to the color and the metalness
-	vec3 f0 = mix( vec3(0.5), albedo.xyz, metalic_roughness.x );
+	vec3 f0 = mix( vec3(0.5), albedo.xyz, metalic_roughness.b );
 
 	//metallic materials do not have diffuse
-	vec3 diffuseColor = (1.0 - metalic_roughness.x) * albedo.xyz;
+	vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
 	
 	
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
@@ -846,10 +866,10 @@ void main()
 		float NdotV = dot(N, V);
 		float LdotH = dot(L, H);
 		//compute the specular 
-		vec3 Fr_d = specularBRDF(  metalic_roughness.y, f0, NdotH, NdotV, NdotL, LdotH);
+		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
 
 		// Here we use the Burley, but you can replace it by the Lambert.
-		float linearRoughness = metalic_roughness.y * metalic_roughness.y;
+		float linearRoughness = metalic_roughness.g * metalic_roughness.g;
 		vec3 Fd_d = diffuseColor * Fd_Burley(NdotV,NdotL,LdotH,linearRoughness); 
 
 		//add diffuse and specular reflection
@@ -870,11 +890,26 @@ void main()
 		if(u_pbr_state == 0.0)
 			direct = vec3(1.0,1.0,1.0);
 		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor * direct;
+		 
 				
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
-		float NdotL = dot(N, u_light_front);
-		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
+		vec3 L = u_light_front;
+		float NdotL = dot(N, L);
+		vec3 H = (V + L) / 2;
+		float NdotH = dot(N, H);
+		float NdotV = dot(N, V);
+		float LdotH = dot(L, H);
+		//compute the specular 
+		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
+
+		// Here we use the Burley, but you can replace it by the Lambert.
+		float linearRoughness = metalic_roughness.g * metalic_roughness.g;
+		vec3 Fd_d = diffuseColor * Fd_Burley(NdotV,NdotL,LdotH,linearRoughness); 
+
+		//add diffuse and specular reflection
+		vec3 direct = Fr_d + Fd_d;
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
 	}
 
 	if(int(u_light_info.x) == NO_LIGHT){

@@ -36,6 +36,10 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	enable_shadows = true;
 	show_gbuffers = false;
 	pbr_is_active = false;
+	buffers_to_show[0] = 0;
+	buffers_to_show[1] = 1;
+	buffers_to_show[2] = 2;
+	buffers_to_show[3] = 3;
 
 	scene = nullptr;
 	skybox_cubemap = nullptr;
@@ -741,16 +745,138 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		halfWidth = size.x / 2;
 		halfHeight = size.y / 2;
 		glViewport(0, halfHeight, halfWidth, halfHeight);
-		gbuffers_fbo->color_textures[0]->toViewport();
+		if (buffers_to_show[0] < 3)
+			gbuffers_fbo->color_textures[buffers_to_show[0]]->toViewport();
+		else if (buffers_to_show[0] > 3)
+		{
+			GFX::Shader* texture_shader = nullptr;
+			switch (buffers_to_show[0]) {
+				case 4:
+					texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+					texture_shader->enable();
+					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+					break;
+				case 5:
+					texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+					texture_shader->enable();
+					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+					break;
+				case 6:
+					texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+					texture_shader->enable();
+					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+					break;
+			}
+			
+		}
+		else
+		{
+			GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+			deph_shader->enable();
+			gbuffers_fbo->depth_texture->toViewport(deph_shader);
+			deph_shader->disable();
+		}
 		glViewport(halfWidth, halfHeight, halfWidth, halfHeight);
-		gbuffers_fbo->color_textures[1]->toViewport();
+		if (buffers_to_show[1] < 3)
+			gbuffers_fbo->color_textures[buffers_to_show[1]]->toViewport();
+		else if (buffers_to_show[1] > 3)
+		{
+			GFX::Shader* texture_shader = nullptr;
+			switch (buffers_to_show[1]) {
+			case 4:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 5:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 6:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			}
+			texture_shader->disable();
+		}
+		else
+		{
+			GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+			deph_shader->enable();
+			gbuffers_fbo->depth_texture->toViewport(deph_shader);
+			deph_shader->disable();
+		}
 		glViewport(0, 0, halfWidth, halfHeight);
-		gbuffers_fbo->color_textures[2]->toViewport();
+		if (buffers_to_show[2] < 3)
+			gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
+		else if (buffers_to_show[2] > 3)
+		{
+			GFX::Shader* texture_shader = nullptr;
+			switch (buffers_to_show[2]) {
+			case 4:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 5:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 6:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			}
+			texture_shader->disable();
+		}
+		else
+		{
+			GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+			deph_shader->enable();
+			gbuffers_fbo->depth_texture->toViewport(deph_shader);
+			deph_shader->disable();
+		}
 		glViewport(halfWidth, 0, halfWidth, halfHeight);
+		/*gbuffers_fbo->color_textures[3]->toViewport();
+		glViewport(halfWidth / 2, halfHeight / 2, halfWidth, halfHeight);*/
 		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 		deph_shader->enable();
 		deph_shader->setUniform("u_camera_nearfar", vec2(camera->near_plane, camera->far_plane));
-		gbuffers_fbo->depth_texture->toViewport(deph_shader);
+		if (buffers_to_show[3] < 3)
+			gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
+		else if (buffers_to_show[3] > 3)
+		{
+			GFX::Shader* texture_shader = nullptr;
+			switch (buffers_to_show[3]) {
+			case 4:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 5:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			case 6:
+				texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+				texture_shader->enable();
+				gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+				break;
+			}
+			texture_shader->disable();
+		}
+		else
+		{
+			GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+			deph_shader->enable();
+			gbuffers_fbo->depth_texture->toViewport(deph_shader);
+			deph_shader->disable();
+		}
 		glViewport(0, 0, size.x, size.y);
 		deph_shader->disable();
 	}
@@ -950,6 +1076,27 @@ void Renderer::showUI()
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
+	if (show_gbuffers) {
+		ImGui::Text("Select buffers");
+		
+		int buffer1 = buffers_to_show[0];
+		int buffer2 = buffers_to_show[1];
+		int buffer3 = buffers_to_show[2];
+		int buffer4 = buffers_to_show[3];
+
+
+		ImGui::Combo("Upper Left", (int*) &buffer1, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+		ImGui::Combo("Upper Right", (int*) &buffer2, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+		ImGui::Combo("Lower Left", (int*) &buffer3, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+		ImGui::Combo("Upper Right", (int*) &buffer4, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+
+		buffers_to_show[0] = buffer1;
+		buffers_to_show[1] = buffer2;
+		buffers_to_show[2] = buffer3;
+		buffers_to_show[3] = buffer4;
+
+		
+	}
 }
 
 #else
