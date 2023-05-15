@@ -667,6 +667,18 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	
 	
 	camera->enable();
+
+	if (!illumination_fbo) {
+		illumination_fbo = new GFX::FBO();
+		illumination_fbo->create(size.x, size.y, 1, GL_RGB, GL_UNSIGNED_BYTE, true);
+	}
+	//TODO big cleanup deferred lights !!!!
+	illumination_fbo->bind();
+
+	//now we copy the gbuffers depth buffer to the binded depth buffer in the FBO
+	gbuffers_fbo->depth_texture->copyTo(NULL);
+	glClear(GL_COLOR_BUFFER_BIT);
+
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
@@ -722,16 +734,6 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
 	shader_spheres->enable();
 
-	if (!illumination_fbo) {
-		illumination_fbo = new GFX::FBO();
-		illumination_fbo->create(size.x, size.y, 1, GL_RGB, GL_UNSIGNED_BYTE, true);
-	}
-
-	illumination_fbo->bind();
-
-	//now we copy the gbuffers depth buffer to the binded depth buffer in the FBO
-	gbuffers_fbo->depth_texture->copyTo(NULL);
-	glClear(GL_COLOR_BUFFER_BIT);
 
 	shader_spheres->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	shader_spheres->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
@@ -757,15 +759,16 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			sphere.render(GL_TRIANGLES);
 		}
 	}
+	renderAlphaObjects(camera);
 
 	illumination_fbo->unbind();
 	shader_spheres->disable();
 	glDisable(GL_BLEND);
-	illumination_fbo->color_textures[0]->toViewport();
 	glFrontFace(GL_CCW);
 	glDisable(GL_BLEND);
 	glDepthFunc(GL_LESS);
 	glDepthMask(true);
+	illumination_fbo->color_textures[0]->toViewport();
 
 	
 
@@ -790,8 +793,6 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		glViewport(0, 0, size.x, size.y);
 		deph_shader->disable();
 	}
-	//TODO Fix deferred Render Alpha nodes
-	renderAlphaObjects(camera);
 }
 void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 {
