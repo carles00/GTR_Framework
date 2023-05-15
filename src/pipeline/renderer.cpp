@@ -504,14 +504,19 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 		shader->setUniform("u_normal_map",normal_map,2);
 	}
 	//----occ & specular
-	if (metalic_texture && (enable_occ|| enable_specular)) {
+	if (metalic_texture && (enable_occ|| enable_specular || pbr_is_active)) {
+		shader->setUniform("u_metalic_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
+		shader->setUniform("u_view_pos", camera->eye);
 		if(enable_occ)
 			texture_flags.y = 1;
-		if (enable_specular) {
-			texture_flags.z = 1;
-			shader->setUniform("u_metalic_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
-			shader->setUniform("u_view_pos", camera->eye);
-		}
+
+		if (enable_specular) 
+			//disabled
+			texture_flags.z = 0;
+		
+		if (pbr_is_active) 
+			texture_flags.w = 1;
+		
 
 		shader->setUniform("u_occ_met_rough_texture", metalic_texture,3);
 	}
@@ -645,7 +650,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	if (!gbuffers_fbo) {
 
 		gbuffers_fbo = new GFX::FBO();
-		gbuffers_fbo->create(size.x, size.y, 3, GL_RGBA, GL_UNSIGNED_BYTE, true);
+		gbuffers_fbo->create(size.x, size.y, 4, GL_RGBA, GL_UNSIGNED_BYTE, true);
 
 	}
 	gbuffers_fbo->bind();

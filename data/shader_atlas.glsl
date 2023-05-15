@@ -391,14 +391,12 @@ in vec3 v_normal;
 in vec2 v_uv;
 in vec4 v_color;
 
-
-
 uniform vec4 u_color;
 uniform vec3 u_emissive_factor;
 uniform vec2 u_metalic_roughness; //metalic, roughness
 uniform vec3 u_view_pos;
 
-uniform vec4 u_texture_flags; //normal, occlusion, specular
+uniform vec4 u_texture_flags; //normal, occlusion, specular, pbr
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_occ_met_rough_texture;
@@ -410,10 +408,9 @@ uniform vec3 u_ambient;
 
 #include "lights"
 #include "normal_functions"
+#include "pbr_utils"
 
 out vec4 FragColor;
-
-
 
 void main()
 {
@@ -430,8 +427,10 @@ void main()
 		discard;
 
 	//normal
+	vec4 metalic_roughness = texture(u_occ_met_rough_texture, uv);
 	vec3 N = normalize(v_normal);
-	
+	vec3 V = normalize(u_view_pos - v_world_position);
+
 	//if the mesh has normal map
 	if(u_texture_flags.x == 1){ 
 		vec3 normal_pixel = texture( u_normal_map, uv ).xyz;
@@ -444,18 +443,31 @@ void main()
 	//add ambient
 	//occulision enabled
 	if(u_texture_flags.y == 1){
-		float occ_fact = texture( u_occ_met_rough_texture, uv ).x;
+		float occ_fact = metalic_roughness.x;
 		light += u_ambient * occ_fact;
 	}else{
 		light += u_ambient;
 	}
 	
-	
+	vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.y);
+	vec3 diffuseColor = (1.0 - metalic_roughness.y) * albedo.xyz;
+
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - v_world_position;
 		float dist = length(L);
 		L /= dist;
+		vec3 H = (V + L) / 2;
+		float NdotV = dot(N, V);
 		float NdotL = dot(N, L);
+		float NdotH = dot(N, H);
+		float LdotH = dot(L, H);
+		//pbr
+		vec3 Fr_d = specularBRDF(metalic_roughness.z, f0, NdotH, NdotV, NdotL, LdotH);
+			
+		float linearRoughness = metalic_roughness.z *metalic_roughness.z;
+		vec3 Fd_d = diffuseColor * Fd_Burley(NdotV,NdotL,LdotH,linearRoughness); 
+		
+		vec3 direct = Fr_d + Fd_d;
 
 		//attenuation
 		float att_factor = (u_light_info.z - dist) / u_light_info.z;
@@ -470,14 +482,17 @@ void main()
 				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
 			}
 		}
-		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;		
+		if(u_texture_flags.w == 0)
+			direct = vec3(1.0,1.0,1.0);
+		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor * direct;		
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 		float NdotL = dot(N, u_light_front);
 		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
 	}
-
-	if(u_texture_flags.z == 1){
+	
+	//specular
+	if(u_texture_flags.z == 1){ 
 		vec3 L = vec3(0,0,0);
 		if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 			L = normalize(u_light_front);
@@ -486,7 +501,6 @@ void main()
 		}
 
 		vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
-		vec3 V = normalize(u_view_pos - v_world_position);
 		vec3 R = reflect(-L, N);
 		float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
 		vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
@@ -702,7 +716,7 @@ uniform vec3 u_emissive_factor;
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 NormalColor;
 layout(location = 2) out vec4 ExtraColor;
-layout(location = 3) out vec4 MetalRoughtColor;
+layout(location = 3) out vec4 MetalRoughColor;
 
 
 void main()
@@ -721,12 +735,12 @@ void main()
 	
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
-	vec3 metallicRoughtness = texture(u_metalic_roughness, v_uv).xyz;
+	vec3 metallicRoughness = texture(u_metalic_roughness, v_uv).xyz;
 
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
 	ExtraColor = vec4(emissive, 1.0);
-	MetalRoughtColor = vec4(metallicRoughtness,1.0);
+	MetalRoughColor = vec4(metallicRoughness,1.0);
 }
 
 \deferred_global.fs
@@ -795,16 +809,16 @@ void main()
 	if(depth == 1.0)
 		discard;
 
-	
-
 	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
 	vec4 proj_worldpos = u_ivp * screen_pos;
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
-
+	
+	//gbuffers
 	vec4 albedo = texture( u_albedo_texture, v_uv );
 	vec4 extra = texture( u_extra_texture, v_uv );
 	vec4 normal_info = texture( u_normal_texture, v_uv );
 	vec4 metalic_roughness = texture(u_metalic_roughness, v_uv);
+
 	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
 	vec3 V = normalize(u_eye - world_position);
 
