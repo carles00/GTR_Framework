@@ -11,6 +11,7 @@ ssao quad.vs ssao.fs
 
 deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
+deferred_ws basic.vs deferred_light.fs
 
 \basic.vs
 
@@ -21,7 +22,7 @@ in vec3 a_normal;
 in vec2 a_coord;
 in vec4 a_color;
 
-uniform vec3 u_camera_pos;
+uniform vec3 u_camera_position;
 
 uniform mat4 u_model;
 uniform mat4 u_viewprojection;
@@ -704,6 +705,7 @@ uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_normal_texture;
 uniform sampler2D u_metalic_roughness;
+
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_emissive_factor;
@@ -730,7 +732,11 @@ void main()
 		vec3 normal_pixel = texture( u_normal_texture, v_uv ).xyz;
 		N = perturbNormal(N,v_world_position, v_uv, normal_pixel);
 	}
-	
+	//occlusion
+	float occ_fact = 1.0;
+	if(u_texture_flags.y == 1){
+		float occ_fact = texture( u_occ_met_rough_texture, v_uv ).x;
+	}
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
 	vec3 metallicRoughness = texture(u_metalic_roughness, v_uv).xyz;
@@ -740,6 +746,7 @@ void main()
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
 	ExtraColor = vec4(emissive, 1.0);
 	MetalRoughColor = vec4(metallicRoughness,1.0);
+
 }
 
 \deferred_global.fs
@@ -795,6 +802,7 @@ uniform vec2 u_iRes;
 uniform vec3 u_eye;
 uniform float u_pbr_state;
 
+
 #include "lights"
 #include "pbr_utils"
 
@@ -829,6 +837,7 @@ void main()
 	//store light
 	vec3 light = vec3(0.0);
 	
+
 	
 	
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
@@ -904,7 +913,7 @@ void main()
 	}
 
 	vec4 color = vec4(0.0,0.0,0.0,1.0);
-	color.xyz = light * albedo.xyz;
+	color.xyz = light * albedo.xyz *extra.w;
 
 	FragColor = color;
 	gl_FragDepth = depth;
