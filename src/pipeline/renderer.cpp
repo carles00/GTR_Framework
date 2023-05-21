@@ -734,7 +734,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
 	shader_spheres->enable();
 
-
+	/*
+	*/
 	shader_spheres->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	shader_spheres->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
 	shader_spheres->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
@@ -748,7 +749,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		if (light->light_type == eLightType::POINT) {
 			Matrix44 model;
 			vec3 lightpos = light->root.model.getTranslation();
-			model.setTranslation(lightpos.x, lightpos.y, lightpos.z);
+			model.translate(lightpos.x, lightpos.y, lightpos.z);
 			model.scale(light->max_distance, light->max_distance, light->max_distance);
 			shader_spheres->setUniform("u_model", model);
 			shader_spheres->setUniform("u_color", vec4(1.0, 0.0, 0.0, 1.0));
@@ -757,6 +758,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			lightToShader(light, shader_spheres);
 			cameraToShader(camera, shader_spheres);
 			sphere.render(GL_TRIANGLES);
+			break;
 		}
 	}
 	renderAlphaObjects(camera);
