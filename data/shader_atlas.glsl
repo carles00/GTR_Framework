@@ -735,7 +735,7 @@ void main()
 	//occlusion
 	float occ_fact = 1.0;
 	if(u_texture_flags.y == 1){
-		float occ_fact = texture( u_occ_met_rough_texture, v_uv ).x;
+		float occ_fact = texture( u_metalic_roughness, v_uv ).x;
 	}
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;

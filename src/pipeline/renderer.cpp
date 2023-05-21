@@ -752,7 +752,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	vec3 ambient = scene->ambient_light;
 	light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 	light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
-	for (auto light : lights) 
+
+	for (auto light : lights) {
 		light_shader->setUniform("u_ambient_light", ambient);
 		light_shader->setUniform("u_eye", camera->eye);
 		lightToShader(light, light_shader);
@@ -769,11 +770,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	shader_spheres->enable();
 
 	/*
-	*/
-	shader_spheres->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
-	shader_spheres->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
-	shader_spheres->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
-	shader_spheres->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
+	
+	gbuffersToShader(gbuffers_fbo, shader_spheres);
 
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_GREATER);
@@ -795,6 +793,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			break;
 		}
 	}
+	*/
 	renderAlphaObjects(camera);
 
 	illumination_fbo->unbind();
