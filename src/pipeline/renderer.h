@@ -101,6 +101,7 @@ namespace SCN {
 		void generateShadowmaps();
 		bool cullLights(LightEntity* light, BoundingBox bb);
 		bool spotLightAABB(LightEntity* light, BoundingBox bb);
+		void gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader);
 
 		void renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera);
 

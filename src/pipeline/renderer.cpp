@@ -683,11 +683,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	GFX::Shader* quad_shader = GFX::Shader::Get("deferred_global");
 	quad_shader->enable();
 
-	
-	quad_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
-	quad_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
-	quad_shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
-	quad_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
+	gbuffersToShader(gbuffers_fbo, quad_shader);
 
 	quad_shader->setUniform("u_ambient_light", scene->ambient_light);
 
@@ -695,17 +691,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
 	light_shader->enable();
-	light_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
-	light_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
-	light_shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
-	light_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
-
-	if (gbuffers_fbo->color_textures[3] && pbr_is_active)
-	{
-		light_shader->setTexture("u_metalic_roughness", gbuffers_fbo->color_textures[3], 4);
-		light_shader->setUniform("u_pbr_state", 1.0f);
-	}else
-		light_shader->setUniform("u_pbr_state", 0.0f);
+	gbuffersToShader(gbuffers_fbo, light_shader);
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
@@ -717,6 +703,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 		light_shader->setUniform("u_ambient_light", ambient);
 		light_shader->setUniform("u_eye", camera->eye);
+		
 		lightToShader(light, light_shader);
 		quad->render(GL_TRIANGLES);
 		ambient = vec3(0.0f); 
@@ -945,8 +932,13 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 		texture_flags.x = 1;
 		shader->setUniform("u_normal_texture", normal_texture, textureSlot++);
 	}
-	if (metalness_texture)
+	if (metalness_texture) {
 		shader->setUniform("u_metalic_roughness", metalness_texture, textureSlot++);
+		if (pbr_is_active) {
+			//std::cout << rc->material->metallic_factor << " " << rc->material->roughness_factor << std::endl;
+			shader->setUniform("u_metalness_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
+		}
+	}
 
 	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 	
@@ -976,7 +968,7 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 	shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
 	shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
 	shader->setUniform("u_light_position", light->root.model.getTranslation());
-	shader->setUniform("u_light_color", light->color * light->intensity);
+	shader->setUniform("u_light_color", (pbr_is_active ? 2 : 1) * light->color * light->intensity);
 	if (light->light_type == eLightType::SPOT)
 		shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
 
@@ -987,6 +979,21 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 		shader->setUniform("u_shadow_viewproj", light->shadow_viewproj);
 		shader->setUniform("u_shadow_region", light->shadowmap_region);
 	}
+}
+
+void SCN::Renderer::gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader) {
+	shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
+	shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
+	shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
+	shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
+
+	if (gbuffers_fbo->color_textures[3] && pbr_is_active)
+	{
+		shader->setTexture("u_metalic_roughness", gbuffers_fbo->color_textures[3], 4);
+		shader->setUniform("u_pbr_state", 1.0f);
+	}
+	else
+		shader->setUniform("u_pbr_state", 0.0f);
 }
 
 void Renderer::showShadowmaps() {

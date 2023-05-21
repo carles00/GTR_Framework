@@ -311,8 +311,8 @@ vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
 #define RECIPROCAL_PI 0.3183098861837697
 #define PI 3.14159265359
 
-float Fd_Lambert() {
-    return 1.0 / PI;
+vec3 Fd_Lambert(vec3 albedo) {
+    return albedo/PI;
 }
 
 // Fresnel term with scalar optimization(f90=1)
@@ -323,6 +323,8 @@ const in float f0)
 	return f0 + (1.0 - f0) * f;
 }
 
+
+
 // Fresnel term with colorized fresnel
 vec3 F_Schlick( const in float VoH, 
 const in vec3 f0)
@@ -331,21 +333,6 @@ const in vec3 f0)
 	return f0 + (vec3(1.0) - f0) * f;
 }
 
-// Fresnel term with scalar optimization(f90=1)
-float F_Schlick( const in float VoH, 
-const in float f0, const in float f90)
-{
-	float f = pow(1.0 - VoH, 5.0);
-	return f0 + (f90 - f0) * f;
-}
-
-// Fresnel term with colorized fresnel
-vec3 F_Schlick( const in float VoH, 
-const in vec3 f0, const in vec3 f90)
-{
-	float f = pow(1.0 - VoH, 5.0);
-	return f0 + (f90 - f0) * f;
-}
 
 // Geometry Term: Geometry masking/shadowing due to microfacets
 float GGX(float NdotV, float k){
@@ -387,20 +374,6 @@ float NoH, float NoV, float NoL, float LoH )
 	spec /= (4.0 * NoL * NoV + 1e-6);
 
 	return spec;
-}
-
-// Diffuse Reflections: Disney BRDF using retro-reflections using F term, this is much more complex!!
-float Fd_Burley ( const in float NoV, const in float NoL,
-const in float LoH, 
-const in float linearRoughness)
-{
-        float f90 = 0.5 + 2.0 * linearRoughness * LoH * LoH;
-		
-		float lightScatter = F_Schlick(NoL, 1.0, f90);
-		float viewScatter  = F_Schlick(NoV, 1.0, f90);      
-		return lightScatter * viewScatter * RECIPROCAL_PI;
-		
-		
 }
 
 
@@ -488,7 +461,7 @@ void main()
 		vec3 Fr_d = specularBRDF(metalic_roughness.b, f0, NdotH, NdotV, NdotL, LdotH);
 			
 		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
-		vec3 Fd_d = diffuseColor * Fd_Burley(NdotV,NdotL,LdotH,linearRoughness); 
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
 		
 		vec3 direct = Fr_d + Fd_d;
 
@@ -733,7 +706,7 @@ uniform sampler2D u_metalic_roughness;
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_emissive_factor;
-
+uniform vec2 u_metalness_roughness;
 
 #include "normal_functions"
 
@@ -760,7 +733,8 @@ void main()
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
 	vec3 metallicRoughness = texture(u_metalic_roughness, v_uv).xyz;
-
+	metallicRoughness.g = pow(metallicRoughness.g, u_metalness_roughness.x);
+	metallicRoughness.b = pow(metallicRoughness.b, u_metalness_roughness.y);
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
 	ExtraColor = vec4(emissive, 1.0);
@@ -874,7 +848,7 @@ void main()
 		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
 
 		// Here we use the Burley, but you can replace it by the Lambert.
-		vec3 Fd_d = diffuseColor * Fd_Lambert(); 
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
 
 		//add diffuse and specular reflection
 		vec3 direct = Fr_d + Fd_d;
@@ -913,7 +887,7 @@ void main()
 		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
 
 		// Here we use the Burley, but you can replace it by the Lambert.
-		vec3 Fd_d = diffuseColor * Fd_Lambert(); 
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
 
 		//add diffuse and specular reflection
 		vec3 direct = Fr_d + Fd_d;
