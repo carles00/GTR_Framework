@@ -62,7 +62,14 @@ namespace SCN {
 		bool enable_shadows;
 		bool show_gbuffers;
 		bool pbr_is_active;
+		bool show_ssao;
+		bool show_only_fbo;
+		bool ssao_plus;
+		bool swap_ssao;
 		int buffers_to_show[4];
+		float ssao_radius;
+		std::vector<vec3> random_points;
+		std::vector<vec3> copy_random_points;
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
@@ -77,6 +84,7 @@ namespace SCN {
 		//deferred
 		GFX::FBO* gbuffers_fbo;
 		GFX::FBO* illumination_fbo;
+		GFX::FBO* ssao_fbo;
 
 		SCN::Scene* scene;
 		//render calls vector
@@ -128,6 +136,8 @@ namespace SCN {
 
 		void cameraToShader(Camera* camera, GFX::Shader* shader); //sends camera uniforms to shader
 		void lightToShader(LightEntity* light, GFX::Shader* shader);
+		std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi);
 	};
 
 };
+

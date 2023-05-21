@@ -7,6 +7,7 @@ multi basic.vs multi.fs
 light_multipass basic.vs light_multipass.fs
 light_singlepass basic.vs light_singlepass.fs
 gbuffers basic.vs gbuffers.fs
+ssao quad.vs ssao.fs
 
 deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
@@ -908,3 +909,67 @@ void main()
 	FragColor = color;
 	gl_FragDepth = depth;
 }
+
+\ssao.fs
+
+#version 330 core
+
+#define NUM_POINTS 64
+
+in vec2 v_uv;
+
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_depth_texture;
+
+
+uniform mat4 u_viewprojection;
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+uniform vec3 u_random_points[NUM_POINTS];
+uniform float u_radius;
+
+
+#include "normal_functions"
+
+layout(location = 0) out vec4 FragColor;
+
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, v_uv ).x;
+	float ao = 1.0;
+	if(depth < 1.0)
+	{
+		vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+		vec4 proj_worldpos = u_ivp * screen_pos;
+		vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+		//lets use 64 samples
+		const int samples = NUM_POINTS;
+		int num = samples; //num samples that passed the are outside
+
+		//for every sample around the point
+		for( int i = 0; i < samples; ++i )
+		{
+			//compute is world position using the random
+			vec3 p = world_position + u_random_points[i] * u_radius;
+			//find the uv in the depth buffer of this point
+			vec4 proj = u_viewprojection * vec4(p,1.0);
+			proj.xy /= proj.w; //convert to clipspace from homogeneous
+			//apply a tiny bias to its z before converting to clip-space
+			proj.z = (proj.z - 0.005) / proj.w;
+			proj.xyz = proj.xyz * 0.5 + vec3(0.5); //to [0..1]
+			//read p true depth
+			float pdepth = texture( u_depth_texture, proj.xy ).x;
+			//compare true depth with its depth
+			if( pdepth < proj.z ) //if true depth smaller, is inside
+				num--; //remove this point from the list of visible
+		}
+		ao = float(num) / float(samples);
+
+	}
+	ao = pow(ao, 1.0/2.2);
+	FragColor = vec4(ao,ao,ao,1.0);
+}
+

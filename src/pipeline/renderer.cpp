@@ -36,6 +36,10 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	enable_shadows = true;
 	show_gbuffers = false;
 	pbr_is_active = false;
+	show_ssao = false;
+	show_only_fbo = false;
+	ssao_plus = false;
+	swap_ssao = false;
 	buffers_to_show[0] = 0;
 	buffers_to_show[1] = 1;
 	buffers_to_show[2] = 2;
@@ -56,13 +60,16 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	shadow_atlas_fbo = new GFX::FBO();
 	shadow_atlas_fbo->setDepthOnly(shadow_atlas_width, shadow_atlas_height);
 	shadow_atlas = shadow_atlas_fbo->depth_texture;
-
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 	GFX::checkGLErrors();
 
 	sphere.createSphere(1.0f);
 	sphere.uploadToVRAM();
+
+	random_points = generateSpherePoints(64, 1.0, false);
+	copy_random_points = generateSpherePoints(64, 1.0, true);
+	ssao_radius = 1.0;
 }
 
 //Sets up the light and render_order vectors, renders the shadowmaps
@@ -649,12 +656,17 @@ void Renderer::singlePass(RenderCall* rc, GFX::Shader* shader) {
 
 void SCN::Renderer::renderDeferred(Camera* camera) {
 
+	GFX::Mesh* quad = GFX::Mesh::getQuad();
+
 	vec2 size = CORE::getWindowSize();
 	//generate the gbuffers
 	if (!gbuffers_fbo) {
 
 		gbuffers_fbo = new GFX::FBO();
 		gbuffers_fbo->create(size.x, size.y, 4, GL_RGBA, GL_UNSIGNED_BYTE, true);
+
+		ssao_fbo = new GFX::FBO();
+		ssao_fbo->create(size.x, size.y, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE, false);
 
 	}
 	gbuffers_fbo->bind();
@@ -668,7 +680,28 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	}
 	gbuffers_fbo->unbind();
 	
-	
+	//ssao
+	ssao_fbo->bind();
+	{
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_BLEND);
+		GFX::Shader* ssao_shader = GFX::Shader::Get("ssao");
+		ssao_shader->enable();
+		ssao_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 0);
+		ssao_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 1);
+		ssao_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+		ssao_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->depth_texture->width, 1.0 / gbuffers_fbo->depth_texture->height));
+
+		ssao_shader->setUniform3Array("u_random_points", random_points[0].v, 64);
+		ssao_shader->setUniform("u_radius", ssao_radius);
+		ssao_shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+
+		quad->render(GL_TRIANGLES);
+		
+	}
+	ssao_fbo->unbind();
+
+
 	camera->enable();
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
@@ -678,7 +711,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	if(skybox_cubemap)
 		renderSkybox(skybox_cubemap);
 	//glDisable(GL_DEPTH_TEST);
-	GFX::Mesh* quad = GFX::Mesh::getQuad();
+	
 	
 	GFX::Shader* quad_shader = GFX::Shader::Get("deferred_global");
 	quad_shader->enable();
@@ -697,10 +730,10 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 	vec3 ambient = scene->ambient_light;
+	light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+	light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 	for (auto light : lights) {
 		
-		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
-		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 		light_shader->setUniform("u_ambient_light", ambient);
 		light_shader->setUniform("u_eye", camera->eye);
 		
@@ -866,6 +899,18 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		glViewport(0, 0, size.x, size.y);
 		deph_shader->disable();
+	}
+
+	if(show_ssao)
+	{
+		if (!show_only_fbo)
+		{
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		}
+		ssao_fbo->color_textures[0]->toViewport();
+		if (!show_only_fbo)
+			glDisable(GL_BLEND);
 	}
 	//compute the illumination
 
@@ -1038,6 +1083,33 @@ bool Renderer::spotLightAABB(LightEntity* light, BoundingBox bb) {
 	return !(angleCull || frontCull || backCull);
 }
 
+std::vector<vec3> Renderer::generateSpherePoints(int num,
+	float radius, bool hemi)
+{
+	std::vector<vec3> points;
+	points.resize(num);
+	for (int i = 0; i < num; i += 1)
+	{
+		vec3& p = points[i];
+		float u = random();
+		float v = random();
+		float theta = u * 2.0 * PI;
+		float phi = acos(2.0 * v - 1.0);
+		float r = cbrt(random() * 0.9 + 0.1) * radius;
+		float sinTheta = sin(theta);
+		float cosTheta = cos(theta);
+		float sinPhi = sin(phi);
+		float cosPhi = cos(phi);
+		p.x = r * sinPhi * cosTheta;
+		p.y = r * sinPhi * sinTheta;
+		p.z = r * cosPhi;
+		if (hemi && p.z < 0)
+			p.z *= -1.0;
+	}
+	return points;
+}
+
+
 //Switch widget extracted from: https://github.com/ocornut/imgui/issues/1537#issuecomment-780262461
 void ToggleButton(const char* label, bool* v)
 {
@@ -1080,6 +1152,22 @@ void Renderer::showUI()
 	ToggleButton("Shadows", &enable_shadows);
 	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
 	ToggleButton("Activate PBR", &pbr_is_active);
+	ToggleButton("Show SSAO", &show_ssao);
+	if (show_ssao)
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox("Show only FBO", &show_only_fbo);
+		ImGui::SliderFloat("ssao_radius", &ssao_radius, 0.0, 50.0);
+		ToggleButton("Activate SSAO+", &ssao_plus);
+		if (ssao_plus == swap_ssao)
+		{
+			std::vector<vec3> tmp_random_points = random_points;
+			random_points = copy_random_points;
+			copy_random_points = tmp_random_points;
+			tmp_random_points.~vector();
+			swap_ssao = !ssao_plus;
+		}
+	}
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
@@ -1091,7 +1179,6 @@ void Renderer::showUI()
 		int buffer3 = buffers_to_show[2];
 		int buffer4 = buffers_to_show[3];
 
-
 		ImGui::Combo("Upper Left", (int*) &buffer1, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
 		ImGui::Combo("Upper Right", (int*) &buffer2, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
 		ImGui::Combo("Lower Left", (int*) &buffer3, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
@@ -1102,8 +1189,8 @@ void Renderer::showUI()
 		buffers_to_show[2] = buffer3;
 		buffers_to_show[3] = buffer4;
 
-		
 	}
+
 }
 
 #else
