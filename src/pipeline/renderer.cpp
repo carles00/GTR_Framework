@@ -37,6 +37,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	show_gbuffers = false;
 	pbr_is_active = false;
 	show_ssao = false;
+	show_only_fbo = false;
+	ssao_plus = false;
+	swap_ssao = false;
 	buffers_to_show[0] = 0;
 	buffers_to_show[1] = 1;
 	buffers_to_show[2] = 2;
@@ -65,6 +68,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.uploadToVRAM();
 
 	random_points = generateSpherePoints(64, 1.0, false);
+	copy_random_points = generateSpherePoints(64, 1.0, true);
 	ssao_radius = 1.0;
 }
 
@@ -912,10 +916,14 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	if(show_ssao)
 	{
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		if (!show_only_fbo)
+		{
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_DST_COLOR, GL_ZERO);
+		}
 		ssao_fbo->color_textures[0]->toViewport();
-		glDisable(GL_BLEND);
+		if (!show_only_fbo)
+			glDisable(GL_BLEND);
 	}
 	//compute the illumination
 
@@ -1138,8 +1146,21 @@ void Renderer::showUI()
 	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
 	ToggleButton("Activate PBR", &pbr_is_active);
 	ToggleButton("Show SSAO", &show_ssao);
-	if(show_ssao)
+	if (show_ssao)
+	{
+		ImGui::SameLine();
+		ImGui::Checkbox("Show only FBO", &show_only_fbo);
 		ImGui::SliderFloat("ssao_radius", &ssao_radius, 0.0, 50.0);
+		ToggleButton("Activate SSAO+", &ssao_plus);
+		if (ssao_plus == swap_ssao)
+		{
+			std::vector<vec3> tmp_random_points = random_points;
+			random_points = copy_random_points;
+			copy_random_points = tmp_random_points;
+			tmp_random_points.~vector();
+			swap_ssao = !ssao_plus;
+		}
+	}
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
@@ -1151,7 +1172,6 @@ void Renderer::showUI()
 		int buffer3 = buffers_to_show[2];
 		int buffer4 = buffers_to_show[3];
 
-
 		ImGui::Combo("Upper Left", (int*) &buffer1, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
 		ImGui::Combo("Upper Right", (int*) &buffer2, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
 		ImGui::Combo("Lower Left", (int*) &buffer3, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
@@ -1162,7 +1182,6 @@ void Renderer::showUI()
 		buffers_to_show[2] = buffer3;
 		buffers_to_show[3] = buffer4;
 
-		
 	}
 
 }

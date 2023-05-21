@@ -63,9 +63,13 @@ namespace SCN {
 		bool show_gbuffers;
 		bool pbr_is_active;
 		bool show_ssao;
+		bool show_only_fbo;
+		bool ssao_plus;
+		bool swap_ssao;
 		int buffers_to_show[4];
 		float ssao_radius;
 		std::vector<vec3> random_points;
+		std::vector<vec3> copy_random_points;
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
