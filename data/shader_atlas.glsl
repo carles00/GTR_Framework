@@ -7,6 +7,8 @@ multi basic.vs multi.fs
 light_multipass basic.vs light_multipass.fs
 light_singlepass basic.vs light_singlepass.fs
 gbuffers basic.vs gbuffers.fs
+
+tonemapper quad.vs tonemapper.fs
 ssao quad.vs ssao.fs
 
 deferred_global quad.vs deferred_global.fs
@@ -935,6 +937,38 @@ void main()
 	FragColor = color;
 	gl_FragDepth = depth;
 }
+
+\tonemapper.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_texture;
+
+uniform float u_scale; //color scale before tonemapper
+uniform float u_average_lum; 
+uniform float u_lumwhite2;
+uniform float u_igamma; //inverse gamma
+
+out vec4 FragColor;
+
+void main() {
+	vec4 color = texture2D( u_texture, v_uv );
+	vec3 rgb = color.xyz;
+
+	float lum = dot(rgb, vec3(0.2126, 0.7152, 0.0722));
+	float L = (u_scale / u_average_lum) * lum;
+	float Ld = (L * (1.0 + L / u_lumwhite2)) / (1.0 + L);
+
+	rgb = (rgb / lum) * Ld;
+	rgb = max(rgb,vec3(0.001));
+	rgb = pow( rgb, vec3( u_igamma ) );
+	FragColor = vec4( rgb, color.a );
+}
+
+
+
 
 \ssao.fs
 

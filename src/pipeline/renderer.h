@@ -80,6 +80,11 @@ namespace SCN {
 		float shadowmap_width;
 		float shadowmap_height;
 
+		float tonemapper_scale;
+		float average_lum;
+		float lumwhite2;
+		float gamma;
+
 		GFX::Texture* skybox_cubemap;
 		//deferred
 		GFX::FBO* gbuffers_fbo;
