@@ -76,11 +76,17 @@ namespace SCN {
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
 		GFX::Texture* shadow_atlas;
+		GFX::Texture* ssao_blur;
 
 		float shadow_atlas_width;
 		float shadow_atlas_height;
 		float shadowmap_width;
 		float shadowmap_height;
+
+		float tonemapper_scale;
+		float average_lum;
+		float lumwhite2;
+		float gamma;
 
 		GFX::Texture* skybox_cubemap;
 		//deferred
