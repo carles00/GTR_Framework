@@ -827,6 +827,51 @@ Shader* Shader::getDefaultShader(std::string name)
 				gl_FragColor = texture2D( u_texture, v_uv );\n\
 			}";
 	}
+	else if (name == "screen_channel_r") //draws a quad fullscreen
+	{
+		vs = "attribute vec3 a_vertex; \
+			varying vec2 v_uv;\n\
+			void main()\n\
+			{\n\
+				v_uv = a_vertex.xy * 0.5 + vec2(0.5);\n\
+				gl_Position = vec4(a_vertex.xy,0.0,1.0);\n\
+			}";
+		fs = "varying vec2 v_uv;\n\
+			uniform sampler2D u_texture;\n\
+			void main() {\n\
+				gl_FragColor = vec4(texture2D( u_texture, v_uv ).r,0.5,0.5,0.0);\n\
+			}";
+	}
+	else if (name == "screen_channel_g") //draws a quad fullscreen
+	{
+		vs = "attribute vec3 a_vertex; \
+			varying vec2 v_uv;\n\
+			void main()\n\
+			{\n\
+				v_uv = a_vertex.xy * 0.5 + vec2(0.5);\n\
+				gl_Position = vec4(a_vertex.xy,0.0,1.0);\n\
+			}";
+		fs = "varying vec2 v_uv;\n\
+			uniform sampler2D u_texture;\n\
+			void main() {\n\
+				gl_FragColor = vec4(0.5,texture2D( u_texture, v_uv ).g,0.5,0.0);\n\
+			}";
+	}
+	else if (name == "screen_channel_b") //draws a quad fullscreen
+	{
+		vs = "attribute vec3 a_vertex; \
+			varying vec2 v_uv;\n\
+			void main()\n\
+			{\n\
+				v_uv = a_vertex.xy * 0.5 + vec2(0.5);\n\
+				gl_Position = vec4(a_vertex.xy,0.0,1.0);\n\
+			}";
+		fs = "varying vec2 v_uv;\n\
+			uniform sampler2D u_texture;\n\
+			void main() {\n\
+				gl_FragColor = vec4(0.5,0.5,texture2D( u_texture, v_uv ).b,0.0);\n\
+			}";
+	}
 	else if (name == "linear_depth")
 	{
 		vs = "attribute vec3 a_vertex; \

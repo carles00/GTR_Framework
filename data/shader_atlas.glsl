@@ -7,6 +7,7 @@ multi basic.vs multi.fs
 light_multipass basic.vs light_multipass.fs
 light_singlepass basic.vs light_singlepass.fs
 gbuffers basic.vs gbuffers.fs
+ssao quad.vs ssao.fs
 
 deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
@@ -307,6 +308,77 @@ vec3 perturbNormal(vec3 N, vec3 WP, vec2 uv, vec3 normal_pixel)
 }
 
 
+\pbr_utils
+
+#define RECIPROCAL_PI 0.3183098861837697
+#define PI 3.14159265359
+
+vec3 Fd_Lambert(vec3 albedo) {
+    return albedo/PI;
+}
+
+// Fresnel term with scalar optimization(f90=1)
+float F_Schlick( const in float VoH, 
+const in float f0)
+{
+	float f = pow(1.0 - VoH, 5.0);
+	return f0 + (1.0 - f0) * f;
+}
+
+
+
+// Fresnel term with colorized fresnel
+vec3 F_Schlick( const in float VoH, 
+const in vec3 f0)
+{
+	float f = pow(1.0 - VoH, 5.0);
+	return f0 + (vec3(1.0) - f0) * f;
+}
+
+
+// Geometry Term: Geometry masking/shadowing due to microfacets
+float GGX(float NdotV, float k){
+	return NdotV / (NdotV * (1.0 - k) + k);
+}
+
+// Normal Distribution Function using GGX Distribution
+float D_GGX (	const in float NoH, 
+const in float linearRoughness )
+{
+	float a2 = linearRoughness * linearRoughness;
+	float f = (NoH * NoH) * (a2 - 1.0) + 1.0;
+	return a2 / (PI * f * f);
+}
+
+float G_Smith( float NdotV, float NdotL, float roughness)
+{
+	float k = pow(roughness + 1.0, 2.0) / 8.0;
+	return GGX(NdotL, k) * GGX(NdotV, k);
+}
+
+//this is the cook torrance specular reflection model
+vec3 specularBRDF( float roughness, vec3 f0, 
+float NoH, float NoV, float NoL, float LoH )
+{
+	float a = roughness * roughness;
+
+	// Normal Distribution Function
+	float D = D_GGX( NoH, a );
+
+	// Fresnel Function
+	vec3 F = F_Schlick( LoH, f0 );
+
+	// Visibility Function (shadowing/masking)
+	float G = G_Smith( NoV, NoL, roughness );
+		
+	// Norm factor
+	vec3 spec = D * G * F;
+	spec /= (4.0 * NoL * NoV + 1e-6);
+
+	return spec;
+}
+
+
 \light_multipass.fs
 
 #version 330 core
@@ -317,14 +389,12 @@ in vec3 v_normal;
 in vec2 v_uv;
 in vec4 v_color;
 
-
-
 uniform vec4 u_color;
 uniform vec3 u_emissive_factor;
 uniform vec2 u_metalic_roughness; //metalic, roughness
 uniform vec3 u_view_pos;
 
-uniform vec4 u_texture_flags; //normal, occlusion, specular
+uniform vec4 u_texture_flags; //normal, occlusion, specular, pbr
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_occ_met_rough_texture;
@@ -336,10 +406,9 @@ uniform vec3 u_ambient;
 
 #include "lights"
 #include "normal_functions"
+#include "pbr_utils"
 
 out vec4 FragColor;
-
-
 
 void main()
 {
@@ -356,8 +425,12 @@ void main()
 		discard;
 
 	//normal
+	vec4 metalic_roughness = texture(u_occ_met_rough_texture, uv);
+	metalic_roughness.g = pow(metalic_roughness.g, u_metalic_roughness.x);
+	metalic_roughness.b = pow(metalic_roughness.b, u_metalic_roughness.y);
 	vec3 N = normalize(v_normal);
-	
+	vec3 V = normalize(u_view_pos - v_world_position);
+
 	//if the mesh has normal map
 	if(u_texture_flags.x == 1){ 
 		vec3 normal_pixel = texture( u_normal_map, uv ).xyz;
@@ -370,18 +443,33 @@ void main()
 	//add ambient
 	//occulision enabled
 	if(u_texture_flags.y == 1){
-		float occ_fact = texture( u_occ_met_rough_texture, uv ).x;
+		float occ_fact = metalic_roughness.x;
 		light += u_ambient * occ_fact;
 	}else{
 		light += u_ambient;
 	}
 	
 	
+
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - v_world_position;
 		float dist = length(L);
 		L /= dist;
+		vec3 H = (V + L) / 2;
+		float NdotV = dot(N, V);
 		float NdotL = dot(N, L);
+		float NdotH = dot(N, H);
+		float LdotH = dot(L, H);
+
+		//pbr
+		vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.b);
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
+		vec3 Fr_d = specularBRDF(metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
+			
+		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
+		
+		vec3 direct = Fr_d + Fd_d;
 
 		//attenuation
 		float att_factor = (u_light_info.z - dist) / u_light_info.z;
@@ -396,14 +484,34 @@ void main()
 				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
 			}
 		}
-		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;		
+		if(u_texture_flags.w == 0)
+			direct = vec3(1.0,1.0,1.0);
+		vec3 light_params = max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;
+		light += light_params * direct;
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
-		float NdotL = dot(N, u_light_front);
-		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
-	}
+		vec3 L = u_light_front;
+		float NdotL = dot(N, L);
+		vec3 H = (V + L) / 2;
+		float NdotH = dot(N, H);
+		float NdotV = dot(N, V);
+		float LdotH = dot(L, H);
+		vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.b);
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
+		vec3 Fr_d = specularBRDF(metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
+			
+		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
+		
+		vec3 direct = Fr_d + Fd_d;
 
-	if(u_texture_flags.z == 1){
+
+
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
+	}
+	
+	//specular
+	if(u_texture_flags.z == 1){ 
 		vec3 L = vec3(0,0,0);
 		if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
 			L = normalize(u_light_front);
@@ -412,7 +520,6 @@ void main()
 		}
 
 		vec2 spec_factors = texture( u_occ_met_rough_texture, uv ).yz;
-		vec3 V = normalize(u_view_pos - v_world_position);
 		vec3 R = reflect(-L, N);
 		float spec = pow(max(dot(V,R),0.0), max(u_metalic_roughness.x - spec_factors.x,0) );
 		vec3 specular = (spec_factors.y - u_metalic_roughness.y)* spec * u_light_color;
@@ -617,16 +724,19 @@ uniform vec4 u_texture_flags; //normal, occlusion, specular
 uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_normal_texture;
-uniform sampler2D u_occ_met_rough_texture;
+uniform sampler2D u_metalic_roughness;
+
 uniform float u_time;
 uniform float u_alpha_cutoff;
 uniform vec3 u_emissive_factor;
+uniform vec2 u_metalness_roughness;
 
 #include "normal_functions"
 
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 NormalColor;
 layout(location = 2) out vec4 ExtraColor;
+layout(location = 3) out vec4 MetalRoughColor;
 
 
 void main()
@@ -645,14 +755,18 @@ void main()
 	//occlusion
 	float occ_fact = 1.0;
 	if(u_texture_flags.y == 1){
-		float occ_fact = texture( u_occ_met_rough_texture, v_uv ).x;
+		float occ_fact = texture( u_metalic_roughness, v_uv ).x;
 	}
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
-
+	vec3 metallicRoughness = texture(u_metalic_roughness, v_uv).xyz;
+	metallicRoughness.g = pow(metallicRoughness.g, u_metalness_roughness.x);
+	metallicRoughness.b = pow(metallicRoughness.b, u_metalness_roughness.y);
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
-	ExtraColor = vec4(emissive, occ_fact);
+	ExtraColor = vec4(emissive, 1.0);
+	MetalRoughColor = vec4(metallicRoughness,1.0);
+
 }
 
 \deferred_global.fs
@@ -701,11 +815,16 @@ uniform sampler2D u_albedo_texture;
 uniform sampler2D u_normal_texture;
 uniform sampler2D u_extra_texture;
 uniform sampler2D u_depth_texture;
+uniform sampler2D u_metalic_roughness;
 
 uniform mat4 u_ivp;
 uniform vec2 u_iRes;
+uniform vec3 u_eye;
+uniform float u_pbr_state;
+
 
 #include "lights"
+#include "pbr_utils"
 
 out vec4 FragColor;
 
@@ -713,20 +832,22 @@ void main()
 {
 	
 	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
-	float depth = texture( u_depth_texture, v_uv ).x;
+	float depth = texture( u_depth_texture, uv ).x;
 	if(depth == 1.0)
 		discard;
-
-	
 
 	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
 	vec4 proj_worldpos = u_ivp * screen_pos;
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+	
+	//gbuffers
+	vec4 albedo = texture( u_albedo_texture, uv );
+	vec4 extra = texture( u_extra_texture, uv );
+	vec4 normal_info = texture( u_normal_texture, uv );
+	vec4 metalic_roughness = texture(u_metalic_roughness, uv);
 
-	vec4 albedo = texture( u_albedo_texture, v_uv );
-	vec4 extra = texture( u_extra_texture, v_uv );
-	vec4 normal_info = texture( u_normal_texture, v_uv );
 	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
+	vec3 V = normalize(u_eye - world_position);
 
 	float shadow_factor = 1.0;
 	if(u_shadow_params.x != 0.0){
@@ -738,12 +859,29 @@ void main()
 	
 
 	
+	
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
+		//we compute the reflection in base to the color and the metalness
+		vec3 f0 = mix( vec3(0.5), albedo.xyz, metalic_roughness.b );
+
+		//metallic materials do not have diffuse
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
 		vec3 L = u_light_position - world_position;
 		float dist = length(L);
 		L /= dist;
 		float NdotL = dot(N, L);
+		vec3 H = (V + L) / 2;
+		float NdotH = dot(N, H);
+		float NdotV = dot(N, V);
+		float LdotH = dot(L, H);
+		//compute the specular 
+		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
 
+		// Here we use the Burley, but you can replace it by the Lambert.
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
+
+		//add diffuse and specular reflection
+		vec3 direct = Fr_d + Fd_d;
 		//attenuation
 		float att_factor = (u_light_info.z - dist) / u_light_info.z;
 		att_factor = max(att_factor, 0);
@@ -757,11 +895,37 @@ void main()
 				att_factor *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
 			}
 		}
-		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor;		
+		if(u_pbr_state == 0.0)
+			direct = vec3(1.0,1.0,1.0);
+		light += max(NdotL, 0.0)* u_light_color * att_factor * shadow_factor * direct;
+		 
+				
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
-		float NdotL = dot(N, u_light_front);
-		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
+		//we compute the reflection in base to the color and the metalness
+		vec3 f0 = mix( vec3(0.5), albedo.xyz, metalic_roughness.b );
+
+		//metallic materials do not have diffuse
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz; 
+		vec3 L = u_light_front;
+		float NdotL = dot(N, L);
+		vec3 H = (V + L) / 2;
+		float NdotH = dot(N, H);
+		float NdotV = dot(N, V);
+		float LdotH = dot(L, H);
+		//compute the specular 
+		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
+
+		// Here we use the Burley, but you can replace it by the Lambert.
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
+
+		//add diffuse and specular reflection
+		vec3 direct = Fr_d + Fd_d;
+
+		if(u_pbr_state == 0.0)
+			direct = vec3(1.0,1.0,1.0);
+			
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
 	}
 
 	if(int(u_light_info.x) == NO_LIGHT){
@@ -774,3 +938,67 @@ void main()
 	FragColor = color;
 	gl_FragDepth = depth;
 }
+
+\ssao.fs
+
+#version 330 core
+
+#define NUM_POINTS 64
+
+in vec2 v_uv;
+
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_depth_texture;
+
+
+uniform mat4 u_viewprojection;
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+uniform vec3 u_random_points[NUM_POINTS];
+uniform float u_radius;
+
+
+#include "normal_functions"
+
+layout(location = 0) out vec4 FragColor;
+
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, v_uv ).x;
+	float ao = 1.0;
+	if(depth < 1.0)
+	{
+		vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+		vec4 proj_worldpos = u_ivp * screen_pos;
+		vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+		//lets use 64 samples
+		const int samples = NUM_POINTS;
+		int num = samples; //num samples that passed the are outside
+
+		//for every sample around the point
+		for( int i = 0; i < samples; ++i )
+		{
+			//compute is world position using the random
+			vec3 p = world_position + u_random_points[i] * u_radius;
+			//find the uv in the depth buffer of this point
+			vec4 proj = u_viewprojection * vec4(p,1.0);
+			proj.xy /= proj.w; //convert to clipspace from homogeneous
+			//apply a tiny bias to its z before converting to clip-space
+			proj.z = (proj.z - 0.005) / proj.w;
+			proj.xyz = proj.xyz * 0.5 + vec3(0.5); //to [0..1]
+			//read p true depth
+			float pdepth = texture( u_depth_texture, proj.xy ).x;
+			//compare true depth with its depth
+			if( pdepth < proj.z ) //if true depth smaller, is inside
+				num--; //remove this point from the list of visible
+		}
+		ao = float(num) / float(samples);
+
+	}
+	ao = pow(ao, 1.0/2.2);
+	FragColor = vec4(ao,ao,ao,1.0);
+}
+
