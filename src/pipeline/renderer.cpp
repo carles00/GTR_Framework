@@ -745,7 +745,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 		for (auto light : lights) {
-
+			if (light->light_type != DIRECTIONAL)
+				continue;
 			light_shader->setUniform("u_ambient_light", ambient);
 			light_shader->setUniform("u_eye", camera->eye);
 			lightToShader(light, light_shader);
