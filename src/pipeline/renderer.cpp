@@ -73,9 +73,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.uploadToVRAM();
 
 	random_points = generateSpherePoints(64, 1.0, false);
-	//copy_random_points = generateSpherePoints(64, 1.0, false);
 	ssao_radius = 1.0;
 }
+
 
 //Sets up the light and render_order vectors, renders the shadowmaps
 void Renderer::setupScene(Camera* camera)
