@@ -426,6 +426,8 @@ void main()
 
 	//normal
 	vec4 metalic_roughness = texture(u_occ_met_rough_texture, uv);
+	metalic_roughness.g = pow(metalic_roughness.g, u_metalic_roughness.x);
+	metalic_roughness.b = pow(metalic_roughness.b, u_metalic_roughness.y);
 	vec3 N = normalize(v_normal);
 	vec3 V = normalize(u_view_pos - v_world_position);
 
@@ -447,8 +449,7 @@ void main()
 		light += u_ambient;
 	}
 	
-	vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.g);
-	vec3 diffuseColor = (1.0 - metalic_roughness.g) * albedo.xyz;
+	
 
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
 		vec3 L = u_light_position - v_world_position;
@@ -459,8 +460,11 @@ void main()
 		float NdotL = dot(N, L);
 		float NdotH = dot(N, H);
 		float LdotH = dot(L, H);
+
 		//pbr
-		vec3 Fr_d = specularBRDF(metalic_roughness.b, f0, NdotH, NdotV, NdotL, LdotH);
+		vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.b);
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
+		vec3 Fr_d = specularBRDF(metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
 			
 		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
 		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
@@ -486,8 +490,24 @@ void main()
 		light += light_params * direct;
 	}
 	else if(int(u_light_info.x) == DIRECTIONAL_LIGHT){
-		float NdotL = dot(N, u_light_front);
-		light += max(NdotL, 0.0)* u_light_color * shadow_factor;		
+		vec3 L = u_light_front;
+		float NdotL = dot(N, L);
+		vec3 H = (V + L) / 2;
+		float NdotH = dot(N, H);
+		float NdotV = dot(N, V);
+		float LdotH = dot(L, H);
+		vec3 f0 = mix(vec3(0.5f), albedo.xyz, metalic_roughness.b);
+		vec3 diffuseColor = (1.0 - metalic_roughness.b) * albedo.xyz;
+		vec3 Fr_d = specularBRDF(metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
+			
+		float linearRoughness = metalic_roughness.b *metalic_roughness.b;
+		vec3 Fd_d = diffuseColor * Fd_Lambert(albedo.xyz); 
+		
+		vec3 direct = Fr_d + Fd_d;
+
+
+
+		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
 	}
 	
 	//specular

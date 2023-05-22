@@ -483,10 +483,10 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 	glEnable(GL_DEPTH_TEST);
 
 	//chose a shader
-	if (render_mode == eRenderMode::LIGHTS_MULTIPASS ) {
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED) {
 		shader = GFX::Shader::Get("light_multipass");
 	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS || render_mode == eRenderMode::DEFERRED) {//deferred for when we call from renderDeferred
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS ) {//deferred for when we call from renderDeferred
 		shader = GFX::Shader::Get("light_singlepass");
 	}
 	
@@ -534,7 +534,6 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 		
 		if (pbr_is_active) 
 			texture_flags.w = 1;
-		
 
 		shader->setUniform("u_occ_met_rough_texture", metalic_texture,3);
 	}
@@ -548,10 +547,10 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 	glDepthFunc(GL_LEQUAL);
 
 	//select single or multipass
-	if (render_mode == eRenderMode::LIGHTS_MULTIPASS) {
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED) {
 		multiPass(rc, shader);
 	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS || render_mode == eRenderMode::DEFERRED) { //deferred for when we call from renderDeferred
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) { //deferred for when we call from renderDeferred
 		singlePass(rc, shader);
 	}
 	
@@ -766,10 +765,10 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	//TODO: Create sphere for  every light
 	// such that renders only the parts INSIDE the mesh
+	/*
 	GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
 	shader_spheres->enable();
 
-	/*
 	
 	gbuffersToShader(gbuffers_fbo, shader_spheres);
 
@@ -793,19 +792,18 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			break;
 		}
 	}
-	*/
-	renderAlphaObjects(camera);
-
-	illumination_fbo->unbind();
 	shader_spheres->disable();
 	glDisable(GL_BLEND);
 	glFrontFace(GL_CCW);
 	glDisable(GL_BLEND);
 	glDepthFunc(GL_LESS);
 	glDepthMask(true);
-	illumination_fbo->color_textures[0]->toViewport();
+	*/
+	renderAlphaObjects(camera);
 
-	
+	illumination_fbo->unbind();
+
+	illumination_fbo->color_textures[0]->toViewport();
 
 	if (show_gbuffers)
 	{
