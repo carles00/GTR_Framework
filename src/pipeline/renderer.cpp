@@ -74,7 +74,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.uploadToVRAM();
 
 	random_points = generateSpherePoints(64, 1.0, false);
-	copy_random_points = generateSpherePoints(64, 1.0, true);
+	//copy_random_points = generateSpherePoints(64, 1.0, false);
 	ssao_radius = 1.0;
 }
 
@@ -677,6 +677,9 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		ssao_fbo = new GFX::FBO();
 		ssao_fbo->create(size.x, size.y, 1, GL_LUMINANCE, GL_UNSIGNED_BYTE, false);
 
+		ssao_blur = new GFX::Texture();
+		ssao_blur->create(size.x, size.y);
+
 	}
 	gbuffers_fbo->bind();
 	//Renderingi inside the gBuffer
@@ -776,6 +779,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		ssao_shader->setUniform3Array("u_random_points", random_points[0].v, 64);
 		ssao_shader->setUniform("u_radius", ssao_radius);
 		ssao_shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
+		ssao_shader->setUniform("u_ssao_plus", ssao_plus ? 1.0f : 0.0f);
 
 		quad->render(GL_TRIANGLES);
 
@@ -1170,10 +1174,10 @@ void Renderer::showUI()
 	ToggleButton("Activate PBR", &pbr_is_active);
 	ImGui::Text("Tonemapper parameters");
 	{
-		ImGui::SliderFloat("Scale", &tonemapper_scale, 0.0, 2.0);
-		ImGui::SliderFloat("Average lum", &average_lum, 0.0, 2.0);
-		ImGui::SliderFloat("Lum white", &lumwhite2, 0.0, 2.0);
-		ImGui::SliderFloat("Gamma", &gamma, 0.0, 2.0);
+		ImGui::SliderFloat("Scale", &tonemapper_scale, 0.01, 2.0);
+		ImGui::SliderFloat("Average lum", &average_lum, 0.01, 2.0);
+		ImGui::SliderFloat("Lum white", &lumwhite2, 0.01, 2.0);
+		ImGui::SliderFloat("Gamma", &gamma, 0.01, 2.0);
 	}
 
 	ToggleButton("Show SSAO", &show_ssao);
@@ -1183,14 +1187,14 @@ void Renderer::showUI()
 		ImGui::Checkbox("Show only FBO", &show_only_fbo);
 		ImGui::SliderFloat("ssao_radius", &ssao_radius, 0.0, 50.0);
 		ToggleButton("Activate SSAO+", &ssao_plus);
-		if (ssao_plus == swap_ssao)
+		/*if (ssao_plus == swap_ssao)
 		{
 			std::vector<vec3> tmp_random_points = random_points;
 			random_points = copy_random_points;
 			copy_random_points = tmp_random_points;
 			tmp_random_points.~vector();
 			swap_ssao = !ssao_plus;
-		}
+		}*/
 	}
 	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)

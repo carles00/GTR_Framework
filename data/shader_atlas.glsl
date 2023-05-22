@@ -987,6 +987,7 @@ uniform mat4 u_ivp;
 uniform vec2 u_iRes;
 uniform vec3 u_random_points[NUM_POINTS];
 uniform float u_radius;
+uniform float u_ssao_plus;
 
 
 #include "normal_functions"
@@ -997,14 +998,16 @@ layout(location = 0) out vec4 FragColor;
 void main()
 {
 	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
-	float depth = texture( u_depth_texture, v_uv ).x;
+	float depth = texture( u_depth_texture, uv ).x;
+	vec4 normal_text = texture( u_normal_texture, uv);
+	vec3 N = normalize( normal_text.xyz * 2.0 - vec3(1.0) );
 	float ao = 1.0;
 	if(depth < 1.0)
 	{
 		vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
 		vec4 proj_worldpos = u_ivp * screen_pos;
 		vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
-
+		
 		//lets use 64 samples
 		const int samples = NUM_POINTS;
 		int num = samples; //num samples that passed the are outside
@@ -1014,6 +1017,13 @@ void main()
 		{
 			//compute is world position using the random
 			vec3 p = world_position + u_random_points[i] * u_radius;
+			
+			if(u_ssao_plus == 1.0)
+			{
+				vec3 pointVector = u_random_points[i];
+				if( dot(N, pointVector) < 0)
+					p -= pointVector;
+			}
 			//find the uv in the depth buffer of this point
 			vec4 proj = u_viewprojection * vec4(p,1.0);
 			proj.xy /= proj.w; //convert to clipspace from homogeneous
@@ -1032,4 +1042,3 @@ void main()
 	ao = pow(ao, 1.0/2.2);
 	FragColor = vec4(ao,ao,ao,1.0);
 }
-

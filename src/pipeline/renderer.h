@@ -74,6 +74,7 @@ namespace SCN {
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
 		GFX::Texture* shadow_atlas;
+		GFX::Texture* ssao_blur;
 
 		float shadow_atlas_width;
 		float shadow_atlas_height;
