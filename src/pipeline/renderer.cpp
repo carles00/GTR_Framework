@@ -753,6 +753,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 
 	for (auto light : lights) {
+		if (light->light_type != DIRECTIONAL)
+			continue;
 		light_shader->setUniform("u_ambient_light", ambient);
 		light_shader->setUniform("u_eye", camera->eye);
 		lightToShader(light, light_shader);
@@ -765,19 +767,21 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	//TODO: Create sphere for  every light
 	// such that renders only the parts INSIDE the mesh
-	/*
+	
 	GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
+	//GFX::Shader* shader_spheres = GFX::Shader::Get("flat");
 	shader_spheres->enable();
 
-	
 	gbuffersToShader(gbuffers_fbo, shader_spheres);
 
 	glEnable(GL_DEPTH_TEST);
 	glDepthFunc(GL_GREATER);
+	glEnable(GL_BLEND);
 	glFrontFace(GL_CW);
+	glBlendFunc(GL_ONE, GL_ONE);
 	glDepthMask(false);
 	for (auto light : lights) {
-		if (light->light_type == eLightType::POINT) {
+		if (light->light_type == eLightType::POINT ) {
 			Matrix44 model;
 			vec3 lightpos = light->root.model.getTranslation();
 			model.translate(lightpos.x, lightpos.y, lightpos.z);
@@ -798,7 +802,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	glDisable(GL_BLEND);
 	glDepthFunc(GL_LESS);
 	glDepthMask(true);
-	*/
+	
 	renderAlphaObjects(camera);
 
 	illumination_fbo->unbind();
@@ -1030,7 +1034,6 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	if (metalness_texture) {
 		shader->setUniform("u_metalic_roughness", metalness_texture, textureSlot++);
 		if (pbr_is_active) {
-			//std::cout << rc->material->metallic_factor << " " << rc->material->roughness_factor << std::endl;
 			shader->setUniform("u_metalness_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
 		}
 	}
@@ -1064,7 +1067,7 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 	shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
 	shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
 	shader->setUniform("u_light_position", light->root.model.getTranslation());
-	shader->setUniform("u_light_color", (pbr_is_active ? 2 : 1) * light->color * light->intensity);
+	shader->setUniform("u_light_color", light->color * light->intensity);
 	if (light->light_type == eLightType::SPOT)
 		shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
 

@@ -832,7 +832,7 @@ void main()
 {
 	
 	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
-	float depth = texture( u_depth_texture, v_uv ).x;
+	float depth = texture( u_depth_texture, uv ).x;
 	if(depth == 1.0)
 		discard;
 
@@ -841,10 +841,10 @@ void main()
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
 	
 	//gbuffers
-	vec4 albedo = texture( u_albedo_texture, v_uv );
-	vec4 extra = texture( u_extra_texture, v_uv );
-	vec4 normal_info = texture( u_normal_texture, v_uv );
-	vec4 metalic_roughness = texture(u_metalic_roughness, v_uv);
+	vec4 albedo = texture( u_albedo_texture, uv );
+	vec4 extra = texture( u_extra_texture, uv );
+	vec4 normal_info = texture( u_normal_texture, uv );
+	vec4 metalic_roughness = texture(u_metalic_roughness, uv);
 
 	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
 	vec3 V = normalize(u_eye - world_position);
