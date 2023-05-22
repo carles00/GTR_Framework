@@ -705,11 +705,11 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		glDisable(GL_DEPTH_TEST);
 		glDisable(GL_BLEND);
 		glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
-		glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
-
+		glClear(GL_COLOR_BUFFER_BIT );
+		gbuffers_fbo->depth_texture->copyTo(NULL);
 		if (skybox_cubemap)
 			renderSkybox(skybox_cubemap);
-		//glDisable(GL_DEPTH_TEST);
+		glDisable(GL_DEPTH_TEST);
 
 
 		GFX::Shader* quad_shader = GFX::Shader::Get("deferred_global");
@@ -722,7 +722,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		quad_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 3);
 
 		quad_shader->setUniform("u_ambient_light", scene->ambient_light);
-
+		glDisable(GL_BLEND);
 		quad->render(GL_TRIANGLES);
 
 		//lights
@@ -756,50 +756,45 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		glDisable(GL_BLEND);
 
-
-
-		//TODO: Create sphere for  every light
-		// such that renders only the parts INSIDE the mesh
-
+		
+		GFX::startGPULabel("Light Meshes");
 		GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
-		//GFX::Shader* shader_spheres = GFX::Shader::Get("flat");
 		shader_spheres->enable();
 
 		gbuffersToShader(gbuffers_fbo, shader_spheres);
 
-		glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_GREATER);
 		glEnable(GL_BLEND);
+		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CW);
-		glBlendFunc(GL_ONE, GL_ONE);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 		glDepthMask(false);
 		for (auto light : lights) {
-			if (light->light_type == eLightType::POINT) {
+			if (light->light_type == eLightType::POINT || light->light_type == SPOT) {
 				Matrix44 model;
 				vec3 lightpos = light->root.model.getTranslation();
 				model.translate(lightpos.x, lightpos.y, lightpos.z);
 				model.scale(light->max_distance, light->max_distance, light->max_distance);
 				shader_spheres->setUniform("u_model", model);
-				shader_spheres->setUniform("u_color", vec4(1.0, 0.0, 0.0, 1.0));
 				shader_spheres->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 				shader_spheres->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
 				lightToShader(light, shader_spheres);
 				cameraToShader(camera, shader_spheres);
 				sphere.render(GL_TRIANGLES);
-				break;
 			}
 		}
 		shader_spheres->disable();
 		glDisable(GL_BLEND);
+		glDisable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
-		glDisable(GL_BLEND);
-		glDepthFunc(GL_LESS);
 		glDepthMask(true);
+		GFX::endGPULabel();
 
 		renderAlphaObjects(camera);
-
 		illumination_fbo->unbind();
-
+		
+		glDisable(GL_DEPTH_TEST);
+		glDisable(GL_BLEND);
 		illumination_fbo->color_textures[0]->toViewport();
 		//ssao
 		ssao_fbo->bind();

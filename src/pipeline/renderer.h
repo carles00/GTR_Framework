@@ -4,7 +4,7 @@
 
 #include "light.h"
 
-#define MAX_LIGHTS 10
+#define MAX_LIGHTS 20
 //forward declarations
 
 class Camera;

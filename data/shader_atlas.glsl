@@ -507,8 +507,6 @@ void main()
 		
 		vec3 direct = Fr_d + Fd_d;
 
-
-
 		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
 	}
 	
