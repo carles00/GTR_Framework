@@ -11,6 +11,10 @@ gbuffers basic.vs gbuffers.fs
 tonemapper quad.vs tonemapper.fs
 ssao quad.vs ssao.fs
 
+spherical_probe basic.vs spherical_probe.fs
+
+irradiance quad.vs irradiance.fs
+
 deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
 deferred_ws basic.vs deferred_light.fs
@@ -1044,4 +1048,151 @@ void main()
 	}
 	ao = pow(ao, 1.0/2.2);
 	FragColor = vec4(ao,ao,ao,1.0);
+}
+
+\probes_utils
+
+const float Pi = 3.141592654;
+const float CosineA0 = Pi;
+const float CosineA1 = (2.0 * Pi) / 3.0;
+const float CosineA2 = Pi * 0.25;
+struct SH9 { float c[9]; }; //to store weights
+struct SH9Color { vec3 c[9]; }; //to store colors
+
+void SHCosineLobe(in vec3 dir, out SH9 sh) //SH9
+{
+	// Band 0
+	sh.c[0] = 0.282095 * CosineA0;
+	// Band 1
+	sh.c[1] = 0.488603 * dir.y * CosineA1; 
+	sh.c[2] = 0.488603 * dir.z * CosineA1;
+	sh.c[3] = 0.488603 * dir.x * CosineA1;
+	// Band 2
+	sh.c[4] = 1.092548 * dir.x * dir.y * CosineA2;
+	sh.c[5] = 1.092548 * dir.y * dir.z * CosineA2;
+	sh.c[6] = 0.315392 * (3.0 * dir.z * dir.z - 1.0) * CosineA2;
+	sh.c[7] = 1.092548 * dir.x * dir.z * CosineA2;
+	sh.c[8] = 0.546274 * (dir.x * dir.x - dir.y * dir.y) * CosineA2;
+}
+
+vec3 ComputeSHIrradiance(in vec3 normal, in SH9Color sh)
+{
+	// Compute the cosine lobe in SH, oriented about the normal direction
+	SH9 shCosine;
+	SHCosineLobe(normal, shCosine);
+	// Compute the SH dot product to get irradiance
+	vec3 irradiance = vec3(0.0);
+	for(int i = 0; i < 9; ++i)
+		irradiance += sh.c[i] * shCosine.c[i];
+
+	return irradiance;
+}
+
+
+\spherical_probe.fs
+
+#version 330 core
+
+in vec3 v_world_position;
+in vec3 v_normal;
+
+#include probes_utils
+uniform vec3 u_coeffs[9];
+
+out vec4 FragColor;
+
+void main()
+{
+	vec4 color = vec4(1.0);
+	vec3 N = normalize(v_normal);
+
+	SH9Color sh;
+	for (int i = 0; i < 9; i++)
+		sh.c[i] = u_coeffs[i];
+
+	color.xyz = max(vec3(0.0), ComputeSHIrradiance(N, sh));
+
+	FragColor = color;
+}
+
+
+\irradiance.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_albedo_texture;
+uniform sampler2D u_normal_texture;
+uniform sampler2D u_depth_texture;
+
+uniform vec3 u_irr_start;
+uniform vec3 u_irr_end;
+uniform vec3 u_irr_dims;
+uniform float u_irr_normal_distance;
+uniform float u_irr_multiplier;
+uniform vec3 u_irr_delta;
+uniform int u_num_probes;
+uniform sampler2D u_probes_texture;
+
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+
+#include probes_utils
+
+out vec4 FragColor;
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, uv ).x;
+	if(depth == 1.0)
+		discard;
+
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 worldpos = proj_worldpos.xyz / proj_worldpos.w;
+	
+	//gbuffers
+	vec4 albedo = texture( u_albedo_texture, uv );
+	vec4 normal_info = texture( u_normal_texture, uv );
+
+	vec3 N = normalize( normal_info.xyz * 2.0 - vec3(1.0) );
+	
+	//computing nearest probe index based on world position
+	vec3 irr_range = u_irr_end - u_irr_start;
+	vec3 irr_local_pos = clamp( worldpos - u_irr_start 
+	+ N * u_irr_normal_distance, //offset a little
+	vec3(0.0), irr_range );
+
+	//convert from world pos to grid pos
+	vec3 irr_norm_pos = irr_local_pos / u_irr_delta;
+
+	//round values as we cannot fetch between rows for now
+	vec3 local_indices = round( irr_norm_pos );
+
+	//compute in which row is the probe stored
+	float row = local_indices.x + 
+	local_indices.y * u_irr_dims.x + 
+	local_indices.z * u_irr_dims.x * u_irr_dims.y;
+
+	//find the UV.y coord of that row in the probes texture
+	float row_uv = (row + 1.0) / (u_num_probes + 1.0);
+
+	SH9Color sh;
+
+	//fill the coefficients
+	const float d_uvx = 1.0 / 9.0;
+	for(int i = 0; i < 9; ++i)
+	{
+		vec2 coeffs_uv = vec2( (float(i)+0.5) * d_uvx, row_uv );
+		sh.c[i] = texture( u_probes_texture, coeffs_uv).xyz;
+	}
+
+	//now we can use the coefficients to compute the irradiance
+	vec3 irradiance = max(vec3(0.0), ComputeSHIrradiance( N, sh ) * u_irr_multiplier);
+
+
+
+	FragColor = vec4(albedo.xyz * irradiance,1.0);
 }
