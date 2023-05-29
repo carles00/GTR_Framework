@@ -88,6 +88,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 void SCN::Renderer::captureIrradiance()
 {
+	update_probes = false;
 	//when computing the probes position…
 
 	//define the corners of the axis aligned grid
@@ -111,9 +112,11 @@ void SCN::Renderer::captureIrradiance()
 	probes.resize(dim.x * dim.y * dim.z);
 	//lets compute the centers
 	//pay attention at the order at which we add them
-	for (int z = 0; z < dim.z; ++z)
-		for (int y = 0; y < dim.y; ++y)
-			for (int x = 0; x < dim.x; ++x)
+	for (int z = 0; z < dim.z; z++)
+	{	
+		for (int y = 0; y < dim.y; y++)
+		{
+			for (int x = 0; x < dim.x; x++)
 			{
 				sProbe p;
 				p.local.set(x, y, z);
@@ -124,15 +127,24 @@ void SCN::Renderer::captureIrradiance()
 				//and its position
 				p.pos = start_pos + delta * vec3(x, y, z);
 				probes[p.index] = p;
+				//probes.push_back(p);
 			}
-
-	show_probes = false;
+		}
+	}
+	//show_probes = false;
 
 	//now compute the coeffs for every probe
-	for (int iP = 0; iP < probes.size(); ++iP)
+	/*
+	for (int iP = 0; iP < probes.size(); iP++)
 	{
-		int probe_index = iP;
 		sProbe& p = probes[iP];
+		captureProbe(p);
+	}
+	*/
+	
+	
+	for each (sProbe p in probes)
+	{
 		captureProbe(p);
 	}
 
@@ -180,7 +192,7 @@ void SCN::Renderer::uploadIrradianceCache()
 		GL_RGB, //3 channels per coefficient
 		GL_FLOAT); //they require a high range
 
-		//we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
+	//we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
 	SphericalHarmonics* sh_data = NULL;
 	sh_data = new SphericalHarmonics[dim.x * dim.y * dim.z];
 
@@ -355,6 +367,9 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	//render entities
 	renderFrame(camera);
 
+	if (update_probes)
+		captureIrradiance();
+
 	//clear render_order after all rendering is finished
 	render_order.clear();
 	render_order_alpha.clear();
@@ -424,10 +439,6 @@ void Renderer::renderSceneNodes(Camera* camera) {
 			break;
 		}
 	}
-	if(update_probes)
-		captureIrradiance();
-
-	update_probes = false;
 }
 
 
@@ -1255,7 +1266,7 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		vec3 center = probe.pos + front;
 		vec3 up = cubemapFaceNormals[i][1];
 		cam.lookAt(eye, center, up);
-		cam.enable();
+		//cam.enable();
 
 		//render the scene from this point of view
 		irr_fbo->bind();
@@ -1306,8 +1317,8 @@ void SCN::Renderer::applyIrradiance()
 	Camera* camera = Camera::current;
 
 	glDisable(GL_DEPTH_TEST);
-	glEnable(GL_BLEND);
-	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	//glEnable(GL_BLEND);
+	//glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
 
 	GFX::Shader* irradiance_shader = GFX::Shader::Get("irradiance");
