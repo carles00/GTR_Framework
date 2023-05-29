@@ -131,11 +131,12 @@ void SCN::Renderer::captureIrradiance()
 			}
 		}
 	}	
-	
-	for each (sProbe p in probes)
+	for (int iP = 0; iP < probes.size(); iP++)
 	{
-		captureProbe(p);
+		sProbe& probe = probes[iP];
+		captureProbe(probe);
 	}
+	
 
 	FILE* f = fopen("irradiance_cache.bin", "w");
 	if (f == NULL)
@@ -149,13 +150,6 @@ void SCN::Renderer::captureIrradiance()
 	fwrite(&irradiance_cache_info, sizeof(irradiance_cache_info), 1, f);
 	fwrite( &probes[0], sizeof(sProbe), irradiance_cache_info.num_probes, f);
 	fclose(f);
-
-	FILE* fd = fopen("test.txt", "w");
-	if (fd == NULL)
-		return;
-
-	fwrite("Debug", sizeof("Debug"), 1, fd);
-	fclose(fd);
 
 	uploadIrradianceCache();
 }
