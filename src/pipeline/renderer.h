@@ -138,6 +138,7 @@ namespace SCN {
 		void loadIrradianceCache();
 		void uploadIrradianceCache();
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos);
+		void renderGBuffers();
 		void renderDeferred(Camera* camera);
 		void renderForward(Camera* camera);
 		void walkEntities(SCN::Node* node, Camera* camera);

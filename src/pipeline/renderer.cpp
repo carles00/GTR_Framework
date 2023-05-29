@@ -130,18 +130,7 @@ void SCN::Renderer::captureIrradiance()
 				//probes.push_back(p);
 			}
 		}
-	}
-	//show_probes = false;
-
-	//now compute the coeffs for every probe
-	/*
-	for (int iP = 0; iP < probes.size(); iP++)
-	{
-		sProbe& p = probes[iP];
-		captureProbe(p);
-	}
-	*/
-	
+	}	
 	
 	for each (sProbe p in probes)
 	{
@@ -160,6 +149,13 @@ void SCN::Renderer::captureIrradiance()
 	fwrite(&irradiance_cache_info, sizeof(irradiance_cache_info), 1, f);
 	fwrite( &probes[0], sizeof(sProbe), irradiance_cache_info.num_probes, f);
 	fclose(f);
+
+	FILE* fd = fopen("test.txt", "w");
+	if (fd == NULL)
+		return;
+
+	fwrite("Debug", sizeof("Debug"), 1, fd);
+	fclose(fd);
 
 	uploadIrradianceCache();
 }
@@ -808,6 +804,150 @@ void Renderer::singlePass(RenderCall* rc, GFX::Shader* shader) {
 	rc->mesh->render(GL_TRIANGLES);
 }
 
+
+void Renderer::renderGBuffers()
+{
+	Camera* camera = Camera::current;
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_BLEND);
+	vec2 size = CORE::getWindowSize();
+	float halfWidth, halfHeight;
+	halfWidth = size.x / 2;
+	halfHeight = size.y / 2;
+	glViewport(0, halfHeight, halfWidth, halfHeight);
+	if (buffers_to_show[0] < 3)
+		gbuffers_fbo->color_textures[buffers_to_show[0]]->toViewport();
+	else if (buffers_to_show[0] > 3)
+	{
+		GFX::Shader* texture_shader = nullptr;
+		switch (buffers_to_show[0]) {
+		case 4:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 5:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 6:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		}
+
+	}
+	else
+	{
+		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		deph_shader->enable();
+		gbuffers_fbo->depth_texture->toViewport(deph_shader);
+		deph_shader->disable();
+	}
+	glViewport(halfWidth, halfHeight, halfWidth, halfHeight);
+	if (buffers_to_show[1] < 3)
+		gbuffers_fbo->color_textures[buffers_to_show[1]]->toViewport();
+	else if (buffers_to_show[1] > 3)
+	{
+		GFX::Shader* texture_shader = nullptr;
+		switch (buffers_to_show[1]) {
+		case 4:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 5:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 6:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		}
+		texture_shader->disable();
+	}
+	else
+	{
+		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		deph_shader->enable();
+		gbuffers_fbo->depth_texture->toViewport(deph_shader);
+		deph_shader->disable();
+	}
+	glViewport(0, 0, halfWidth, halfHeight);
+	if (buffers_to_show[2] < 3)
+		gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
+	else if (buffers_to_show[2] > 3)
+	{
+		GFX::Shader* texture_shader = nullptr;
+		switch (buffers_to_show[2]) {
+		case 4:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 5:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 6:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		}
+		texture_shader->disable();
+	}
+	else
+	{
+		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		deph_shader->enable();
+		gbuffers_fbo->depth_texture->toViewport(deph_shader);
+		deph_shader->disable();
+	}
+	glViewport(halfWidth, 0, halfWidth, halfHeight);
+	GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+	deph_shader->enable();
+	deph_shader->setUniform("u_camera_nearfar", vec2(camera->near_plane, camera->far_plane));
+	if (buffers_to_show[3] < 3)
+		gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
+	else if (buffers_to_show[3] > 3)
+	{
+		GFX::Shader* texture_shader = nullptr;
+		switch (buffers_to_show[3]) {
+		case 4:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 5:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		case 6:
+			texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
+			texture_shader->enable();
+			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
+			break;
+		}
+		texture_shader->disable();
+	}
+	else
+	{
+		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		deph_shader->enable();
+		gbuffers_fbo->depth_texture->toViewport(deph_shader);
+		deph_shader->disable();
+	}
+	glViewport(0, 0, size.x, size.y);
+	deph_shader->disable();
+}
 void SCN::Renderer::renderDeferred(Camera* camera) {
 
 	GFX::Mesh* quad = GFX::Mesh::getQuad();
@@ -900,8 +1040,6 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		glDisable(GL_BLEND);
 
-
-
 		//TODO: Create sphere for  every light
 		// such that renders only the parts INSIDE the mesh
 
@@ -911,14 +1049,15 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		gbuffersToShader(gbuffers_fbo, shader_spheres);
 
-		glEnable(GL_DEPTH_TEST);
+		//glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_GREATER);
 		glEnable(GL_BLEND);
+		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CW);
 		glBlendFunc(GL_ONE, GL_ONE);
 		glDepthMask(false);
 		for (auto light : lights) {
-			if (light->light_type == eLightType::POINT) {
+			if (light->light_type == eLightType::POINT || light->light_type == eLightType::SPOT) {
 				Matrix44 model;
 				vec3 lightpos = light->root.model.getTranslation();
 				model.translate(lightpos.x, lightpos.y, lightpos.z);
@@ -930,21 +1069,40 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 				lightToShader(light, shader_spheres);
 				cameraToShader(camera, shader_spheres);
 				sphere.render(GL_TRIANGLES);
-				break;
 			}
 		}
 		shader_spheres->disable();
 		glDisable(GL_BLEND);
 		glFrontFace(GL_CCW);
 		glDisable(GL_BLEND);
+		glDisable(GL_CULL_FACE);
 		glDepthFunc(GL_LESS);
 		glDepthMask(true);
 
 		renderAlphaObjects(camera);
 
+		//irradiance
+		applyIrradiance();
+
+		if (show_probes)
+		{
+			for (size_t i = 0; i < probes.size(); i++)
+			{
+				renderProbe(probes[i]);
+
+			}
+		}
+
 		illumination_fbo->unbind();
 
-		illumination_fbo->color_textures[0]->toViewport();
+		/*illumination_fbo->color_textures[0]->toViewport();*/
+		GFX::Shader* illumination_shader = GFX::Shader::Get("tonemapper");
+		illumination_shader->enable();
+		illumination_shader->setUniform("u_scale", tonemapper_scale);
+		illumination_shader->setUniform("u_average_lum", average_lum);
+		illumination_shader->setUniform("u_lumwhite2", lumwhite2);
+		illumination_shader->setUniform("u_igamma", 1.0f / gamma);
+		illumination_fbo->color_textures[0]->toViewport(illumination_shader);
 		
 		//ssao
 		ssao_fbo->bind();
@@ -968,176 +1126,17 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		ssao_fbo->unbind();
 
-		//irradiance
-		applyIrradiance();
+
 
 		glEnable(GL_DEPTH_TEST);
 
-		if (show_probes)
-		{
-			glDisable(GL_BLEND);
-			for (size_t i = 0; i < probes.size(); i++)
-			{
-				renderProbe(probes[i]);
-
-			}
-			glEnable(GL_BLEND);
-		}
+		
 
 		if (show_gbuffers)
-		{
-			glDisable(GL_DEPTH_TEST);
-			glDisable(GL_BLEND);
-			float halfWidth, halfHeight;
-			halfWidth = size.x / 2;
-			halfHeight = size.y / 2;
-			glViewport(0, halfHeight, halfWidth, halfHeight);
-			if (buffers_to_show[0] < 3)
-				gbuffers_fbo->color_textures[buffers_to_show[0]]->toViewport();
-			else if (buffers_to_show[0] > 3)
-			{
-				GFX::Shader* texture_shader = nullptr;
-				switch (buffers_to_show[0]) {
-				case 4:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 5:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 6:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				}
-
-			}
-			else
-			{
-				GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
-				deph_shader->enable();
-				gbuffers_fbo->depth_texture->toViewport(deph_shader);
-				deph_shader->disable();
-			}
-			glViewport(halfWidth, halfHeight, halfWidth, halfHeight);
-			if (buffers_to_show[1] < 3)
-				gbuffers_fbo->color_textures[buffers_to_show[1]]->toViewport();
-			else if (buffers_to_show[1] > 3)
-			{
-				GFX::Shader* texture_shader = nullptr;
-				switch (buffers_to_show[1]) {
-				case 4:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 5:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 6:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				}
-				texture_shader->disable();
-			}
-			else
-			{
-				GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
-				deph_shader->enable();
-				gbuffers_fbo->depth_texture->toViewport(deph_shader);
-				deph_shader->disable();
-			}
-			glViewport(0, 0, halfWidth, halfHeight);
-			if (buffers_to_show[2] < 3)
-				gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
-			else if (buffers_to_show[2] > 3)
-			{
-				GFX::Shader* texture_shader = nullptr;
-				switch (buffers_to_show[2]) {
-				case 4:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 5:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 6:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				}
-				texture_shader->disable();
-			}
-			else
-			{
-				GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
-				deph_shader->enable();
-				gbuffers_fbo->depth_texture->toViewport(deph_shader);
-				deph_shader->disable();
-			}
-			glViewport(halfWidth, 0, halfWidth, halfHeight);
-			/*gbuffers_fbo->color_textures[3]->toViewport();
-			glViewport(halfWidth / 2, halfHeight / 2, halfWidth, halfHeight);*/
-			GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
-			deph_shader->enable();
-			deph_shader->setUniform("u_camera_nearfar", vec2(camera->near_plane, camera->far_plane));
-			if (buffers_to_show[3] < 3)
-				gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
-			else if (buffers_to_show[3] > 3)
-			{
-				GFX::Shader* texture_shader = nullptr;
-				switch (buffers_to_show[3]) {
-				case 4:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 5:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_g");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				case 6:
-					texture_shader = GFX::Shader::getDefaultShader("screen_channel_b");
-					texture_shader->enable();
-					gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
-					break;
-				}
-				texture_shader->disable();
-			}
-			else
-			{
-				GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
-				deph_shader->enable();
-				gbuffers_fbo->depth_texture->toViewport(deph_shader);
-				deph_shader->disable();
-			}
-			glViewport(0, 0, size.x, size.y);
-			deph_shader->disable();
-		}
-		else
-		{
-			GFX::Shader* illumination_shader = GFX::Shader::Get("tonemapper");
-			illumination_shader->enable();
-			illumination_shader->setUniform("u_scale", tonemapper_scale);
-			illumination_shader->setUniform("u_average_lum", average_lum);
-			illumination_shader->setUniform("u_lumwhite2", lumwhite2);
-			illumination_shader->setUniform("u_igamma", 1.0f / gamma);
-
-			illumination_fbo->color_textures[0]->toViewport(illumination_shader);
-		}
+			renderGBuffers();
+		
+		
+		
 
 		if (show_ssao)
 		{
@@ -1271,10 +1270,7 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		//render the scene from this point of view
 		irr_fbo->bind();
 		{
-			eRenderMode prev_render_mode = render_mode;
-			render_mode = eRenderMode::LIGHTS_MULTIPASS;
 			renderForward(&cam);
-			render_mode = prev_render_mode;
 		}
 		irr_fbo->unbind();
 
@@ -1317,8 +1313,8 @@ void SCN::Renderer::applyIrradiance()
 	Camera* camera = Camera::current;
 
 	glDisable(GL_DEPTH_TEST);
-	//glEnable(GL_BLEND);
-	//glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
 
 	GFX::Shader* irradiance_shader = GFX::Shader::Get("irradiance");
