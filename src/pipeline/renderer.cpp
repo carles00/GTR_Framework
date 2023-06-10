@@ -1001,7 +1001,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		quad->render(GL_TRIANGLES);
 
-		
+		//irradiance
+		applyIrradiance();
 
 		//lights
 		GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
@@ -1089,14 +1090,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		illumination_fbo->unbind();
 
-		/*illumination_fbo->color_textures[0]->toViewport();*/
-		GFX::Shader* illumination_shader = GFX::Shader::Get("tonemapper");
-		illumination_shader->enable();
-		illumination_shader->setUniform("u_scale", tonemapper_scale);
-		illumination_shader->setUniform("u_average_lum", average_lum);
-		illumination_shader->setUniform("u_lumwhite2", lumwhite2);
-		illumination_shader->setUniform("u_igamma", 1.0f / gamma);
-		illumination_fbo->color_textures[0]->toViewport(illumination_shader);
+		
 		
 		//ssao
 		ssao_fbo->bind();
@@ -1128,10 +1122,18 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		if (show_gbuffers)
 			renderGBuffers();
-		else //irradiance
-			applyIrradiance();
-		
-		
+		else
+		{
+			/*illumination_fbo->color_textures[0]->toViewport();*/
+			GFX::Shader* illumination_shader = GFX::Shader::Get("tonemapper");
+			illumination_shader->enable();
+			illumination_shader->setUniform("u_scale", tonemapper_scale);
+			illumination_shader->setUniform("u_average_lum", average_lum);
+			illumination_shader->setUniform("u_lumwhite2", lumwhite2);
+			illumination_shader->setUniform("u_igamma", 1.0f / gamma);
+			illumination_fbo->color_textures[0]->toViewport(illumination_shader);
+		}
+
 
 		if (show_ssao)
 		{
