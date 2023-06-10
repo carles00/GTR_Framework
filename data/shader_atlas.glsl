@@ -1107,7 +1107,7 @@ void main()
 	vec3 N = normalize(v_normal);
 
 	SH9Color sh;
-	for (int i = 0; i < 9; i++)
+	for (int i = 0; i < 9; ++i)
 		sh.c[i] = u_coeffs[i];
 
 	color.xyz = max(vec3(0.0), ComputeSHIrradiance(N, sh));

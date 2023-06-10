@@ -138,7 +138,7 @@ void SCN::Renderer::captureIrradiance()
 	}
 	
 
-	FILE* f = fopen("irradiance_cache.bin", "w");
+	FILE* f = fopen("irradiance_cache.bin", "wb");
 	if (f == NULL)
 		return;
 
@@ -156,7 +156,7 @@ void SCN::Renderer::captureIrradiance()
 
 void SCN::Renderer::loadIrradianceCache()
 {
-	FILE* f = fopen("irradiance_cache.bin", "w");
+	FILE* f = fopen("irradiance_cache.bin", "rb");
 	if (f == NULL)
 		return;
 
@@ -1075,11 +1075,11 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		renderAlphaObjects(camera);
 
-		//irradiance
-		applyIrradiance();
+		
 
 		if (show_probes)
 		{
+			glEnable(GL_DEPTH_TEST);
 			for (size_t i = 0; i < probes.size(); i++)
 			{
 				renderProbe(probes[i]);
@@ -1128,7 +1128,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		if (show_gbuffers)
 			renderGBuffers();
-		
+		else //irradiance
+			applyIrradiance();
 		
 		
 
@@ -1259,12 +1260,15 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		vec3 center = probe.pos + front;
 		vec3 up = cubemapFaceNormals[i][1];
 		cam.lookAt(eye, center, up);
-		//cam.enable();
+		cam.enable();
 
 		//render the scene from this point of view
 		irr_fbo->bind();
 		{
+			eRenderMode tmp_render_mode = render_mode;
+			render_mode = eRenderMode::LIGHTS_MULTIPASS;
 			renderForward(&cam);
+			render_mode = tmp_render_mode;
 		}
 		irr_fbo->unbind();
 
@@ -1280,10 +1284,6 @@ void SCN::Renderer::renderProbe(sProbe& probe)
 {
 	Camera* camera = Camera::current;
 	GFX::Shader* shader = GFX::Shader::Get("spherical_probe");
-
-	glEnable(GL_CULL_FACE);
-	glDisable(GL_BLEND);
-	glEnable(GL_DEPTH_TEST);
 
 	Matrix44 model;
 	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
