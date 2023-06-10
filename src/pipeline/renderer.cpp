@@ -1001,8 +1001,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		quad->render(GL_TRIANGLES);
 
-		//irradiance
-		applyIrradiance();
+		
 
 		//lights
 		GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
@@ -1069,24 +1068,26 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		shader_spheres->disable();
 		glDisable(GL_BLEND);
 		glFrontFace(GL_CCW);
-		glDisable(GL_BLEND);
 		glDisable(GL_CULL_FACE);
 		glDepthFunc(GL_LESS);
 		glDepthMask(true);
 
 		renderAlphaObjects(camera);
 
-		
+		//irradiance
+		applyIrradiance();
 
+		glEnable(GL_DEPTH_TEST);
+		glDisable(GL_BLEND);
 		if (show_probes)
 		{
-			glEnable(GL_DEPTH_TEST);
 			for (size_t i = 0; i < probes.size(); i++)
 			{
 				renderProbe(probes[i]);
 
 			}
 		}
+			glEnable(GL_BLEND);
 
 		illumination_fbo->unbind();
 
