@@ -232,6 +232,7 @@ void SceneEditor::render(Camera* camera)
 		{
 		case SCN::eEntityType::PREFAB: inspectEntity((SCN::PrefabEntity*)ent); break;
 		case SCN::eEntityType::LIGHT: inspectEntity((SCN::LightEntity*)ent); break;
+		case SCN::eEntityType::DECAL: inspectEntity((SCN::DecalEntity*)ent); break;
 		case SCN::eEntityType::NONE: inspectEntity((SCN::UnknownEntity*)ent); break;
 		default: inspectEntity(ent); break;
 		}
@@ -372,6 +373,14 @@ void SceneEditor::inspectEntity(SCN::LightEntity* entity)
 		ImGui::DragFloat("shadow_bias", &entity->shadow_bias, 0.001, 0.0f, 0.1f);
 	}
 #endif
+}
+
+void SceneEditor::inspectEntity(SCN::DecalEntity* entity)
+{
+	if (UI::Filename("filename", entity->filename, scene->base_folder))
+	{
+		
+	}
 }
 
 

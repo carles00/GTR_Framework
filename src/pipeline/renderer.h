@@ -3,6 +3,7 @@
 #include "prefab.h"
 
 #include "light.h"
+#include "../gfx/sphericalharmonics.h"
 
 #define MAX_LIGHTS 10
 //forward declarations
@@ -29,6 +30,21 @@ namespace SCN {
 	
 	struct sLightsContainer {
 		std::vector<LightEntity*> lights;
+	};
+
+
+	struct sProbe {
+		vec3 pos; //where is located
+		vec3 local; //its ijk pos in the matrix
+		int index; //its index in the linear array
+		SphericalHarmonics sh; //coeffs
+	};
+
+	struct sIrradianceCacheInfo {
+		int num_probes;
+		vec3 dims;
+		vec3 start;
+		vec3 end;
 	};
 
 	// This class is in charge of rendering anything in our system.
@@ -68,8 +84,12 @@ namespace SCN {
 		bool show_only_fbo;
 		bool ssao_plus;
 		bool swap_ssao;
+		bool show_probes;
+		bool update_probes;
 		int buffers_to_show[4];
 		float ssao_radius;
+		bool enable_volumetric;
+		bool show_volumetric;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
 
@@ -77,6 +97,7 @@ namespace SCN {
 		GFX::FBO* shadow_atlas_fbo;
 		GFX::Texture* shadow_atlas;
 		GFX::Texture* ssao_blur;
+		GFX::Texture* probes_texture;
 
 		float shadow_atlas_width;
 		float shadow_atlas_height;
@@ -87,18 +108,29 @@ namespace SCN {
 		float average_lum;
 		float lumwhite2;
 		float gamma;
+		float irradiance_multiplier;
 
 		GFX::Texture* skybox_cubemap;
 		//deferred
 		GFX::FBO* gbuffers_fbo;
+		GFX::Texture* clone_depth_buffer;
 		GFX::FBO* illumination_fbo;
 		GFX::FBO* ssao_fbo;
+		GFX::FBO* irr_fbo;
+		GFX::FBO* volumetric_fbo;
+
+		sIrradianceCacheInfo irradiance_cache_info;
+		std::vector<sProbe> probes;
+
 
 		SCN::Scene* scene;
 		//render calls vector
 		std::vector<RenderCall> render_order;
 		std::vector<RenderCall> render_order_alpha;
 		std::vector<LightEntity*> lights;
+		std::vector<DecalEntity*> decals;
+		//Volumetric params
+		float air_density;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );
@@ -109,7 +141,11 @@ namespace SCN {
 		//add here your functions
 		//...
 		void renderFrame(Camera* camera);
+		void captureIrradiance();
+		void loadIrradianceCache();
+		void uploadIrradianceCache();
 		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos);
+		void renderGBuffers();
 		void renderDeferred(Camera* camera);
 		void renderForward(Camera* camera);
 		void walkEntities(SCN::Node* node, Camera* camera);
@@ -137,6 +173,10 @@ namespace SCN {
 	
 		//to render one node from the prefab and its children
 		void renderNode(SCN::Node* node, Camera* camera);
+
+		void renderProbe(sProbe& probe);
+		void applyIrradiance();
+		void captureProbe(sProbe& probe);
 
 		//to render one mesh given its material and transformation matrix
 		void renderMeshWithMaterial(RenderCall* rc, Camera* camera);
