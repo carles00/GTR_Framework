@@ -22,6 +22,7 @@ using namespace SCN;
 
 //some globals
 GFX::Mesh sphere;
+GFX::Mesh cube;
 
 Renderer::Renderer(const char* shader_atlas_filename)
 {
@@ -56,6 +57,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	volumetric_fbo = nullptr;
 	enable_volumetric = false;
 	show_volumetric = false;
+	clone_depth_buffer = nullptr;
 
 	air_density = 0.001;
 
@@ -82,6 +84,9 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 	sphere.createSphere(1.0f);
 	sphere.uploadToVRAM();
+
+	cube.createCube(1.0f);
+	cube.uploadToVRAM();
 
 	random_points = generateSpherePoints(64, 1.0, false);
 	ssao_radius = 1.0;
@@ -219,6 +224,7 @@ void Renderer::setupScene(Camera* camera)
 	
 	//clear lights vector
 	lights.clear();
+	decals.clear();
 
 	//parse all scene nodes and asign them to rendercall or litghts
 	for (int i = 0; i < scene->entities.size(); ++i)
@@ -235,6 +241,9 @@ void Renderer::setupScene(Camera* camera)
 
 		}else if (ent->getType() == SCN::eEntityType::LIGHT){
 			lights.push_back((SCN::LightEntity*)ent);
+		}
+		else if (ent->getType() == SCN::DECAL) {
+			decals.push_back((SCN::DecalEntity*)ent);
 		}
 	}
 
@@ -958,6 +967,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		gbuffers_fbo = new GFX::FBO();
 		gbuffers_fbo->create(size.x, size.y, 4, GL_RGBA, GL_UNSIGNED_BYTE, true);
 
+		clone_depth_buffer = new GFX::Texture(size.x, size.y, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT);
+
 		illumination_fbo = new GFX::FBO();
 		illumination_fbo->create(size.x, size.y, 1, GL_RGBA, GL_HALF_FLOAT, false);
 
@@ -980,6 +991,42 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		renderSceneNodes(camera);
 	}
 	gbuffers_fbo->unbind();
+
+	//decals
+	if (decals.size()) {
+		gbuffers_fbo->depth_texture->copyTo(clone_depth_buffer);
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(false);
+		glDepthFunc(GL_GREATER);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC0_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glFrontFace(GL_CW);
+		glEnable(GL_CULL_FACE);
+		gbuffers_fbo->bind();
+		{
+			camera->enable();
+			GFX::Shader* decal_shader = GFX::Shader::Get("decal");
+			decal_shader->enable();
+			cameraToShader(camera, decal_shader);
+			decal_shader->setTexture("u_depth_texture", clone_depth_buffer,4);
+			decal_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			decal_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
+			for (auto decal : decals) {
+				decal_shader->setUniform("u_model", decal->root.model);
+				mat4 imodel = decal->root.model;
+				imodel.inverse();
+				decal_shader->setUniform("u_imodel", decal->root.model);
+				GFX::Texture* decal_texture = decal->filename.size() == 0 ? GFX::Texture::getWhiteTexture() : GFX::Texture::Get(std::string("data/" + decal->filename).c_str());
+				decal_shader->setTexture("u_color_texture", decal_texture, 5);
+				cube.render(GL_TRIANGLES);
+			}
+		}
+		gbuffers_fbo->unbind();
+		glDepthMask(true);
+		glDisable(GL_CULL_FACE);
+		glFrontFace(GL_CCW);
+		glDepthFunc(GL_LESS);
+	}
 
 
 	illumination_fbo->bind();

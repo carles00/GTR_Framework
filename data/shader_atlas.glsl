@@ -21,6 +21,8 @@ deferred_ws basic.vs deferred_light.fs
 
 volumetric quad.vs volumetric.fs
 
+decal basic.vs decal.fs
+
 \basic.vs
 
 #version 330 core
@@ -1309,4 +1311,42 @@ void main()
 	}
 
 	FragColor = vec4(irradiance, 1.0 - clamp(transparency, 0.0, 1.0));
+}
+
+\decal.fs
+
+#version 330 core
+
+in vec2 v_uv;
+
+uniform sampler2D u_depth_texture;
+uniform sampler2D u_color_texture;
+uniform mat4 u_ivp;
+uniform mat4 u_imodel;
+uniform vec2 u_iRes;
+
+uniform vec3 u_ambient_light;
+
+out vec4 FragColor;
+
+void main()
+{
+	
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, uv ).x;
+	if(depth == 1.0)
+		discard;
+
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+	
+	vec3 decal_space = (u_imodel * vec4(world_position, 1.0)).xyz ;
+	decal_space = decal_space + vec3(0.5);
+
+	vec2 decal_uv = decal_space.xy;
+	
+	vec4 color = texture(u_color_texture, decal_uv);
+
+	FragColor = color;
 }

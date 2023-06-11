@@ -32,6 +32,7 @@ public:
 	void inspectEntity(SCN::BaseEntity* entity);
 	void inspectEntity(SCN::PrefabEntity* entity);
 	void inspectEntity(SCN::LightEntity* entity);
+	void inspectEntity(SCN::DecalEntity* entity);
 	void inspectEntity(SCN::UnknownEntity* entity);
 
 	void renderInList(SCN::BaseEntity* entity);

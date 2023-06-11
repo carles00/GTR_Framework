@@ -113,6 +113,7 @@ namespace SCN {
 		GFX::Texture* skybox_cubemap;
 		//deferred
 		GFX::FBO* gbuffers_fbo;
+		GFX::Texture* clone_depth_buffer;
 		GFX::FBO* illumination_fbo;
 		GFX::FBO* ssao_fbo;
 		GFX::FBO* irr_fbo;
@@ -127,7 +128,7 @@ namespace SCN {
 		std::vector<RenderCall> render_order;
 		std::vector<RenderCall> render_order_alpha;
 		std::vector<LightEntity*> lights;
-
+		std::vector<DecalEntity*> decals;
 		//Volumetric params
 		float air_density;
 
