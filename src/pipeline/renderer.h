@@ -88,6 +88,8 @@ namespace SCN {
 		bool update_probes;
 		int buffers_to_show[4];
 		float ssao_radius;
+		bool enable_volumetric;
+		bool show_volumetric;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
 
@@ -114,6 +116,7 @@ namespace SCN {
 		GFX::FBO* illumination_fbo;
 		GFX::FBO* ssao_fbo;
 		GFX::FBO* irr_fbo;
+		GFX::FBO* volumetric_fbo;
 
 		sIrradianceCacheInfo irradiance_cache_info;
 		std::vector<sProbe> probes;
@@ -124,6 +127,9 @@ namespace SCN {
 		std::vector<RenderCall> render_order;
 		std::vector<RenderCall> render_order_alpha;
 		std::vector<LightEntity*> lights;
+
+		//Volumetric params
+		float air_density;
 
 		//updated every frame
 		Renderer(const char* shaders_atlas_filename );

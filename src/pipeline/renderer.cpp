@@ -53,6 +53,11 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	shadow_atlas_fbo = nullptr;
 	irr_fbo = nullptr;
 	probes_texture = nullptr;
+	volumetric_fbo = nullptr;
+	enable_volumetric = false;
+	show_volumetric = false;
+
+	air_density = 0.001;
 
 	render_order = std::vector<RenderCall>();
 	lights = std::vector<LightEntity*>();
@@ -962,6 +967,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		ssao_blur = new GFX::Texture();
 		ssao_blur->create(size.x, size.y);
 
+		volumetric_fbo = new GFX::FBO();
+		volumetric_fbo->create(size.x, size.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, false);
 	}
 	gbuffers_fbo->bind();
 	//Rendering inside the gBuffer
@@ -1115,6 +1122,33 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		ssao_fbo->unbind();
 
+		volumetric_fbo->bind();
+		{
+			glDisable(GL_DEPTH_TEST);
+			glDisable(GL_BLEND);
+			GFX::Shader* volumetric_shader = GFX::Shader::Get("volumetric");
+			volumetric_shader->enable();
+			volumetric_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 1);
+			volumetric_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			volumetric_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->depth_texture->width, 1.0 / gbuffers_fbo->depth_texture->height));
+			volumetric_shader->setUniform("u_camera_position", camera->eye);
+
+			LightEntity* volumetric = nullptr;
+			for (auto light : lights) {
+				if (light->light_type == SPOT)
+					volumetric = light;
+			}
+			lightToShader(volumetric, volumetric_shader);
+			volumetric_shader->setUniform("u_air_density", air_density);
+			volumetric_shader->setUniform("u_ambient", scene->ambient_light);
+			volumetric_shader->setUniform("u_time", getTime()*0.001f);
+			volumetric_shader->setUniform("u_random", random());
+
+			quad->render(GL_TRIANGLES);
+
+		}
+		volumetric_fbo->unbind();
+		
 
 
 		glEnable(GL_DEPTH_TEST);
@@ -1135,6 +1169,13 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			illumination_fbo->color_textures[0]->toViewport(illumination_shader);
 		}
 
+		if (enable_volumetric) {
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			volumetric_fbo->color_textures[0]->toViewport();
+			glDisable(GL_BLEND);
+		}
 
 		if (show_ssao)
 		{
@@ -1147,7 +1188,9 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			if (!show_only_fbo)
 				glDisable(GL_BLEND);
 		}
-		//compute the illumination
+		
+		if(show_volumetric)
+			volumetric_fbo->color_textures[0]->toViewport();
 
 	}
 }
@@ -1563,6 +1606,10 @@ void Renderer::showUI()
 	}
 
 	ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
+	ImGui::DragFloat("Air Density", &air_density, 0.0001, 0.0, 0.1);
+	ToggleButton("Eanble Volumetric", &enable_volumetric);
+	if (enable_volumetric) 
+		ToggleButton("Show Volumetric", &show_volumetric);
 }
 
 #else

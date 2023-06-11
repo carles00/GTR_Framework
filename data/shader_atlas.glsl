@@ -19,6 +19,8 @@ deferred_global quad.vs deferred_global.fs
 deferred_light quad.vs deferred_light.fs
 deferred_ws basic.vs deferred_light.fs
 
+volumetric quad.vs volumetric.fs
+
 \basic.vs
 
 #version 330 core
@@ -1195,4 +1197,116 @@ void main()
 
 
 	FragColor = vec4(albedo.xyz * irradiance,1.0);
+}
+
+
+\volumetric.fs
+
+#version 330 core
+
+#define SAMPLES 64
+
+in vec2 v_uv;
+
+uniform sampler2D u_depth_texture;
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+uniform vec3 u_camera_position;
+uniform float u_air_density;
+uniform vec3 u_ambient;
+uniform float u_random;
+uniform float u_time;
+
+#include "lights"
+#include "normal_functions"
+
+layout(location = 0) out vec4 FragColor;
+
+
+vec3 computeLight(vec3 pos)
+{
+	vec3 light = vec3(0.0);
+	float shadow_factor = 1.0;
+
+	if(u_shadow_params.x != 0.0)
+		shadow_factor = testShadow(pos);
+
+	if(int(u_light_info.x) == DIRECTIONAL_LIGHT)
+	{
+		light = u_light_color * shadow_factor;
+	}
+	else if (int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT)
+	{
+		vec3 L = u_light_position - pos;
+		float dist = length(L);
+		L /= dist;
+		float att = max(0.0, (u_light_info.z - dist)/u_light_info.z);
+		if(int(u_light_info.x) == SPOT_LIGHT){
+			float cos_angle = dot(u_light_front, L);
+			if(cos_angle < u_light_cone.y){
+				att = 0;
+			}
+			else if(cos_angle < u_light_cone.x){
+				att *= 1.0 - (cos_angle - u_light_cone.x) / (u_light_cone.y - u_light_cone.x);
+			}
+		}
+
+		light += u_light_color * att * shadow_factor;
+	}
+	return light;
+}
+
+float rand(vec2 co)
+{
+	return fract(sin(dot(co, vec2(12.9898, 78.233)))*43758.5453123);
+}
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, uv ).x;
+
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;	
+		
+	//compute ray info
+	vec3 ray_start = u_camera_position;
+	vec3 ray_dir = ( world_position - ray_start );
+	float ray_length = length(ray_dir);
+	ray_dir /= ray_length;
+	ray_dir = normalize(ray_dir);
+	ray_length = min( 500.0, ray_length ); //max ray
+	float step_dist = ray_length / float(SAMPLES);
+
+	ray_start += ray_dir*rand(uv + vec2(u_random, u_time)) * step_dist;
+
+	vec3 current_pos = ray_start;
+	vec3 ray_offset = ray_dir * step_dist;
+
+	vec3 volumetric = vec3(0.0);
+
+	vec3 irradiance = vec3(0.0);
+	float transparency = 1.0;
+	float air_step = u_air_density * step_dist;
+
+	for(int i = 0; i < SAMPLES; ++i)
+	{
+		//evaluate contribution
+		vec3 light = computeLight(current_pos);
+
+		//accumulate the amount of light
+		irradiance += (u_ambient + light )* transparency * air_step;
+
+		//advance to next position
+		current_pos.xyz += ray_offset;
+
+		transparency -= air_step;
+
+		//too dense, nothing can be seen behind
+		if( transparency < 0.001 )
+			break;
+	}
+
+	FragColor = vec4(irradiance, 1.0 - clamp(transparency, 0.0, 1.0));
 }
