@@ -1348,5 +1348,5 @@ void main()
 	
 	vec4 color = texture(u_color_texture, decal_uv);
 
-	FragColor = color;
+	FragColor = vec4(decal_space, 1.0);
 }

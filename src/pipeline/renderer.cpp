@@ -1169,8 +1169,9 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		ssao_fbo->unbind();
 
-		volumetric_fbo->bind();
+		if(enable_volumetric)
 		{
+			volumetric_fbo->bind();
 			glDisable(GL_DEPTH_TEST);
 			glDisable(GL_BLEND);
 			GFX::Shader* volumetric_shader = GFX::Shader::Get("volumetric");
