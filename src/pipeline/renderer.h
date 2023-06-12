@@ -86,6 +86,7 @@ namespace SCN {
 		bool swap_ssao;
 		bool show_probes;
 		bool update_probes;
+		bool irradiance;
 		int buffers_to_show[4];
 		float ssao_radius;
 		std::vector<vec3> random_points;

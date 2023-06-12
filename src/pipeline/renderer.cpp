@@ -41,6 +41,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	swap_ssao = false;
 	show_probes = false;
 	update_probes = false;
+	irradiance = false;
 	buffers_to_show[0] = 0;
 	buffers_to_show[1] = 1;
 	buffers_to_show[2] = 2;
@@ -1074,20 +1075,25 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		renderAlphaObjects(camera);
 
-		//irradiance
-		applyIrradiance();
-
-		glEnable(GL_DEPTH_TEST);
-		glDisable(GL_BLEND);
-		if (show_probes)
+		if (irradiance)
 		{
-			for (size_t i = 0; i < probes.size(); i++)
-			{
-				renderProbe(probes[i]);
+			//irradiance
+			applyIrradiance();
 
+			glEnable(GL_DEPTH_TEST);
+			glDisable(GL_BLEND);
+			if (show_probes)
+			{
+				for (size_t i = 0; i < probes.size(); i++)
+				{
+					renderProbe(probes[i]);
+
+				}
 			}
-		}
 			glEnable(GL_BLEND);
+			glDisable(GL_DEPTH_TEST);
+
+		}
 
 		illumination_fbo->unbind();
 
@@ -1550,19 +1556,22 @@ void Renderer::showUI()
 		buffers_to_show[3] = buffer4;
 
 	}
-
-	ToggleButton("Show Probes", &show_probes);
-	update_probes = ImGui::Button("Update Probes");
-
-	struct stat buffer;
-	if ((stat("irradiance_cache.bin", &buffer) == 0))
+	ToggleButton("Activate irradiance", &irradiance);
+	if (irradiance)
 	{
-		ImGui::SameLine();
-		if (ImGui::Button("Load Probes"))
-			loadIrradianceCache();
-	}
+		ToggleButton("Show Probes", &show_probes);
+		update_probes = ImGui::Button("Update Probes");
 
-	ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
+		struct stat buffer;
+		if ((stat("irradiance_cache.bin", &buffer) == 0))
+		{
+			ImGui::SameLine();
+			if (ImGui::Button("Load Probes"))
+				loadIrradianceCache();
+		}
+
+		ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
+	}
 }
 
 #else
