@@ -997,11 +997,12 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		gbuffers_fbo->depth_texture->copyTo(clone_depth_buffer);
 		glEnable(GL_DEPTH_TEST);
 		glDepthMask(false);
+		glColorMask(true, true, true, false);
 		glDepthFunc(GL_GREATER);
 		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC0_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-		glFrontFace(GL_CW);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 		glEnable(GL_CULL_FACE);
+		glFrontFace(GL_CW);
 		gbuffers_fbo->bind();
 		{
 			camera->enable();
@@ -1010,12 +1011,12 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			cameraToShader(camera, decal_shader);
 			decal_shader->setTexture("u_depth_texture", clone_depth_buffer,4);
 			decal_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
-			decal_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
+			decal_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->color_textures[0]->width, 1.0 / gbuffers_fbo->color_textures[0]->height));
 			for (auto decal : decals) {
 				decal_shader->setUniform("u_model", decal->root.model);
 				mat4 imodel = decal->root.model;
 				imodel.inverse();
-				decal_shader->setUniform("u_imodel", decal->root.model);
+				decal_shader->setUniform("u_imodel", imodel);
 				GFX::Texture* decal_texture = decal->filename.size() == 0 ? GFX::Texture::getWhiteTexture() : GFX::Texture::Get(std::string("data/" + decal->filename).c_str());
 				decal_shader->setTexture("u_color_texture", decal_texture, 5);
 				cube.render(GL_TRIANGLES);
@@ -1023,6 +1024,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		}
 		gbuffers_fbo->unbind();
 		glDepthMask(true);
+		glColorMask(true, true, true, true);
 		glDisable(GL_CULL_FACE);
 		glFrontFace(GL_CCW);
 		glDepthFunc(GL_LESS);

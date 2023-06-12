@@ -1341,12 +1341,16 @@ void main()
 	vec4 proj_worldpos = u_ivp * screen_pos;
 	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
 	
-	vec3 decal_space = (u_imodel * vec4(world_position, 1.0)).xyz ;
-	decal_space = decal_space + vec3(0.5);
+	vec3 localpos = (u_imodel * vec4(world_position, 1.0)).xyz ;
+	
+	if( localpos.x < -0.5 || localpos.x > 0.5 ||
+    		localpos.y < -0.5 || localpos.y > 0.5 ||
+    		localpos.z < -0.5 || localpos.z > 0.5 )
+			discard;
 
-	vec2 decal_uv = decal_space.xy;
+	vec2 decal_uv = localpos.xy + vec2(0.5);
 	
 	vec4 color = texture(u_color_texture, decal_uv);
 
-	FragColor = vec4(decal_space, 1.0);
+	FragColor = color;
 }
