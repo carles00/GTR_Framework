@@ -93,6 +93,8 @@ namespace SCN {
 		bool update_probes;
 		int buffers_to_show[4];
 		float ssao_radius;
+		float brightness_fx;
+		float blur_intensity;
 		bool enable_volumetric;
 		bool show_volumetric;
 		bool show_reflection_probe;
@@ -102,6 +104,11 @@ namespace SCN {
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
+		GFX::FBO* postfxIN_fbo;
+		GFX::FBO* postfxOUT_fbo;
+		GFX::FBO* postfxTEMP_fbo;
+		Matrix44 prev_viewprojection_matrix;
+
 		GFX::Texture* shadow_atlas;
 		GFX::Texture* ssao_blur;
 		GFX::Texture* probes_texture;
@@ -179,6 +186,8 @@ namespace SCN {
 
 		//render the skybox
 		void renderSkybox(GFX::Texture* cubemap);
+
+		void renderPostFX(GFX::Texture* color_buffer, GFX::Texture* depth_buffer, Camera* camera );
 	
 		//to render one node from the prefab and its children
 		void renderNode(SCN::Node* node, Camera* camera);
