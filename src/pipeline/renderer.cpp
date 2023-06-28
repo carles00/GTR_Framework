@@ -43,6 +43,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	swap_ssao = false;
 	show_probes = false;
 	update_probes = false;
+	show_reflection_probe = false;
 	buffers_to_show[0] = 0;
 	buffers_to_show[1] = 1;
 	buffers_to_show[2] = 2;
@@ -378,12 +379,15 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	//render entities
 	renderFrame(camera);
 
+	if (show_reflection_probe)
+	{
+		glEnable(GL_DEPTH_TEST);
+		renderReflectionProbe(probe);
+		glDisable(GL_DEPTH_TEST);
+	}
+
 	if (update_probes)
 		captureIrradiance();
-
-	renderReflectionProbe(probe);
-
-	
 
 	if (show_shadowmaps)
 		showShadowmaps();
@@ -1394,8 +1398,8 @@ void Renderer::captureReflection(sReflectionProbe& probe)
 	}
 	eRenderMode prev = render_mode;
 	render_mode = LIGHTS_MULTIPASS;
-	Camera camera;
-	camera.setPerspective(90,1,0.1,1000);
+	Camera cam;
+	cam.setPerspective(90,1,0.1,1000);
 
 	for (int i = 0; i < 6; i++)
 	{
@@ -1404,12 +1408,14 @@ void Renderer::captureReflection(sReflectionProbe& probe)
 		
 		vec3 target = probe.pos + cubemapFaceNormals[i][2];
 		vec3 up = cubemapFaceNormals[i][1];
-		camera.lookAt(probe.pos, target, up);
+		cam.lookAt(probe.pos, target, up);
 		
-		renderForward(&camera);
+		eRenderMode tmp_render_mode = render_mode;
+		render_mode = eRenderMode::LIGHTS_MULTIPASS;
+		renderForward(&cam);
+		render_mode = tmp_render_mode;
 		reflection_fbo->unbind();
 	}
-	render_mode = prev;
 
 	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
 	probe.texture->generateMipmaps();
@@ -1417,6 +1423,7 @@ void Renderer::captureReflection(sReflectionProbe& probe)
 
 void Renderer::renderReflectionProbe(sReflectionProbe& probe) 
 {
+	
 	GFX::Texture* texture = probe.texture ? probe.texture : skybox_cubemap;
 	Camera* camera = Camera::current;
 	GFX::Shader* shader = GFX::Shader::Get("reflectionProbe");
@@ -1427,7 +1434,7 @@ void Renderer::renderReflectionProbe(sReflectionProbe& probe)
 	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
 	model.scale(10, 10, 10);
 	shader->setUniform("u_model", model);
-	shader->setUniform("u_texture", texture,0);
+	shader->setUniform("u_texture", texture, 0);
 	sphere.render(GL_TRIANGLES);
 }
 
@@ -1709,7 +1716,7 @@ void Renderer::showUI()
 		if (ImGui::Button("Load Probes"))
 			loadIrradianceCache();
 	}
-
+	ToggleButton("Show reflection probe", &show_reflection_probe);
 	if(ImGui::Button("update reflection"))
 		captureReflection(probe);
 

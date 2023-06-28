@@ -95,6 +95,7 @@ namespace SCN {
 		float ssao_radius;
 		bool enable_volumetric;
 		bool show_volumetric;
+		bool show_reflection_probe;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
 		sReflectionProbe probe;
