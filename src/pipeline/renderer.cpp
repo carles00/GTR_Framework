@@ -24,6 +24,7 @@ using namespace SCN;
 GFX::Mesh sphere;
 GFX::Mesh cube;
 
+
 Renderer::Renderer(const char* shader_atlas_filename)
 {
 	render_wireframe = false;
@@ -58,6 +59,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	enable_volumetric = false;
 	show_volumetric = false;
 	clone_depth_buffer = nullptr;
+	reflection_fbo = nullptr;
 
 	air_density = 0.001;
 
@@ -93,10 +95,11 @@ Renderer::Renderer(const char* shader_atlas_filename)
 
 	irradiance_cache_info.num_probes = 0;
 
+	probe.pos.set(50,50,50);
 }
 
 
-void SCN::Renderer::captureIrradiance()
+void Renderer::captureIrradiance()
 {
 	update_probes = false;
 	//when computing the probes position…
@@ -164,7 +167,7 @@ void SCN::Renderer::captureIrradiance()
 	uploadIrradianceCache();
 }
 
-void SCN::Renderer::loadIrradianceCache()
+void Renderer::loadIrradianceCache()
 {
 	FILE* f = fopen("irradiance_cache.bin", "rb");
 	if (f == NULL)
@@ -178,7 +181,7 @@ void SCN::Renderer::loadIrradianceCache()
 	uploadIrradianceCache();
 }
 
-void SCN::Renderer::uploadIrradianceCache()
+void Renderer::uploadIrradianceCache()
 {
 	if (probes_texture)
 		delete probes_texture;
@@ -217,6 +220,10 @@ void SCN::Renderer::uploadIrradianceCache()
 //Sets up the light and render_order vectors, renders the shadowmaps
 void Renderer::setupScene(Camera* camera)
 {
+	//clear render_order after all rendering is finished
+	render_order.clear();
+	render_order_alpha.clear();
+
 	if (scene->skybox_filename.size())
 		skybox_cubemap = GFX::Texture::Get(std::string(scene->base_folder + "/" + scene->skybox_filename).c_str());
 	else
@@ -282,7 +289,7 @@ void Renderer::walkEntities(SCN::Node* node, Camera* camera) {
 }
 
 //Creates a render call for a given entity and stores it on the render_order vector
-void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos) {
+void Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos) {
 	RenderCall rc;
 	Vector3f nodepos = model.getTranslation();
 	rc.model = model;
@@ -374,12 +381,14 @@ void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
 	if (update_probes)
 		captureIrradiance();
 
-	//clear render_order after all rendering is finished
-	render_order.clear();
-	render_order_alpha.clear();
+	renderReflectionProbe(probe);
+
+	
 
 	if (show_shadowmaps)
 		showShadowmaps();
+
+	
 
 }
 
@@ -394,7 +403,7 @@ void Renderer::renderFrame(Camera* camera)
 
 
 //Calls renderMesh for each rendercall stored in render_order
-void SCN::Renderer::renderForward(Camera* camera) {
+void Renderer::renderForward(Camera* camera) {
 	
 
 	glDisable(GL_BLEND);
@@ -956,7 +965,7 @@ void Renderer::renderGBuffers()
 	glViewport(0, 0, size.x, size.y);
 	deph_shader->disable();
 }
-void SCN::Renderer::renderDeferred(Camera* camera) {
+void Renderer::renderDeferred(Camera* camera) {
 
 	GFX::Mesh* quad = GFX::Mesh::getQuad();
 
@@ -1185,7 +1194,7 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 			LightEntity* volumetric = nullptr;
 			for (auto light : lights) {
-				if (light->light_type == SPOT)
+				if (light->light_type == DIRECTIONAL)
 					volumetric = light;
 			}
 			lightToShader(volumetric, volumetric_shader);
@@ -1196,14 +1205,10 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 			quad->render(GL_TRIANGLES);
 
+			volumetric_fbo->unbind();
 		}
-		volumetric_fbo->unbind();
-		
-
 
 		glEnable(GL_DEPTH_TEST);
-
-		
 
 		if (show_gbuffers)
 			renderGBuffers();
@@ -1288,6 +1293,8 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	if (!shader)
 		return;
 	shader->enable();
+	if(skybox_cubemap)
+		shader->setUniform("u_environment", skybox_cubemap, 8);
 
 	//upload uniforms
 	shader->setUniform("u_model", rc->model);
@@ -1334,7 +1341,7 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-void SCN::Renderer::captureProbe(sProbe& probe)
+void Renderer::captureProbe(sProbe& probe)
 {
 	FloatImage images[6]; //here we will store the six views
 	Camera cam;
@@ -1376,14 +1383,62 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 	probe.sh = computeSH(images);
 }
 
-void SCN::Renderer::renderProbe(sProbe& probe)
+void Renderer::captureReflection(sReflectionProbe& probe) 
+{
+	if (!reflection_fbo) {
+		reflection_fbo = new GFX::FBO();
+	}
+	if (!probe.texture) {
+		probe.texture = new GFX::Texture();
+		probe.texture->createCubemap(256, 256, nullptr, GL_RGB, GL_FLOAT, true);
+	}
+	eRenderMode prev = render_mode;
+	render_mode = LIGHTS_MULTIPASS;
+	Camera camera;
+	camera.setPerspective(90,1,0.1,1000);
+
+	for (int i = 0; i < 6; i++)
+	{
+		reflection_fbo->setTexture(probe.texture, i);
+		reflection_fbo->bind();
+		
+		vec3 target = probe.pos + cubemapFaceNormals[i][2];
+		vec3 up = cubemapFaceNormals[i][1];
+		camera.lookAt(probe.pos, target, up);
+		
+		renderForward(&camera);
+		reflection_fbo->unbind();
+	}
+	render_mode = prev;
+
+	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+	probe.texture->generateMipmaps();
+}
+
+void Renderer::renderReflectionProbe(sReflectionProbe& probe) 
+{
+	GFX::Texture* texture = probe.texture ? probe.texture : skybox_cubemap;
+	Camera* camera = Camera::current;
+	GFX::Shader* shader = GFX::Shader::Get("reflectionProbe");
+	shader->enable();
+
+	cameraToShader(camera, shader);
+	Matrix44 model;
+	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
+	model.scale(10, 10, 10);
+	shader->setUniform("u_model", model);
+	shader->setUniform("u_texture", texture,0);
+	sphere.render(GL_TRIANGLES);
+}
+
+void Renderer::renderProbe(sProbe& probe)
 {
 	Camera* camera = Camera::current;
 	GFX::Shader* shader = GFX::Shader::Get("spherical_probe");
 
 	Matrix44 model;
-	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
 	model.scale(10, 10, 10);
+	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
 
 	shader->enable();
 
@@ -1394,7 +1449,7 @@ void SCN::Renderer::renderProbe(sProbe& probe)
 	sphere.render(GL_TRIANGLES);
 }
 
-void SCN::Renderer::applyIrradiance() 
+void Renderer::applyIrradiance() 
 {
 	if (!probes_texture)
 		return;
@@ -1436,12 +1491,12 @@ void SCN::Renderer::applyIrradiance()
 
 
 
-void SCN::Renderer::cameraToShader(Camera* camera, GFX::Shader* shader)
+void Renderer::cameraToShader(Camera* camera, GFX::Shader* shader)
 {
 	shader->setUniform("u_viewprojection", camera->viewprojection_matrix );
 	shader->setUniform("u_camera_position", camera->eye);
 }
-void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
+void Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 {
 	shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
 	shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
@@ -1460,7 +1515,7 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 }
 
 
-void SCN::Renderer::gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader) {
+void Renderer::gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader) {
 	shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
 	shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
@@ -1654,6 +1709,9 @@ void Renderer::showUI()
 		if (ImGui::Button("Load Probes"))
 			loadIrradianceCache();
 	}
+
+	if(ImGui::Button("update reflection"))
+		captureReflection(probe);
 
 	ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
 	ImGui::DragFloat("Air Density", &air_density, 0.0001, 0.0, 0.1);

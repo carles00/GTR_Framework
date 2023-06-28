@@ -7,6 +7,7 @@ multi basic.vs multi.fs
 light_multipass basic.vs light_multipass.fs
 light_singlepass basic.vs light_singlepass.fs
 gbuffers basic.vs gbuffers.fs
+reflectionProbe basic.vs reflectionProbe.fs
 
 tonemapper quad.vs tonemapper.fs
 ssao quad.vs ssao.fs
@@ -735,6 +736,7 @@ uniform sampler2D u_albedo_texture;
 uniform sampler2D u_emissive_texture;
 uniform sampler2D u_normal_texture;
 uniform sampler2D u_metalic_roughness;
+uniform vec3 u_camera_position;
 
 uniform float u_time;
 uniform float u_alpha_cutoff;
@@ -742,6 +744,8 @@ uniform vec3 u_emissive_factor;
 uniform vec2 u_metalness_roughness;
 
 #include "normal_functions"
+
+uniform samplerCube u_environment;
 
 layout(location = 0) out vec4 FragColor;
 layout(location = 1) out vec4 NormalColor;
@@ -758,6 +762,9 @@ void main()
 		discard;
 
 	vec3 N = normalize(v_normal);
+	vec3 E = normalize(v_world_position - u_camera_position);
+	vec3 R = reflect(E, N);
+
 	if(u_texture_flags.x == 1){
 		vec3 normal_pixel = texture( u_normal_texture, v_uv ).xyz;
 		N = perturbNormal(N,v_world_position, v_uv, normal_pixel);
@@ -770,8 +777,16 @@ void main()
 
 	vec3 emissive = u_emissive_factor * texture(u_emissive_texture, v_uv).xyz;
 	vec3 metallicRoughness = texture(u_metalic_roughness, v_uv).xyz;
+
+
+	//float fresnel = 1.0 - max(0.0, dot(-E, N));
+	float reflective_factor =  metallicRoughness.b * u_metalness_roughness.y;
+
+	vec3 reflected_color = texture(u_environment, R).xyz;
+	color.xyz = mix(color.xyz, reflected_color, reflective_factor);
 	metallicRoughness.g = pow(metallicRoughness.g, u_metalness_roughness.x);
 	metallicRoughness.b = pow(metallicRoughness.b, u_metalness_roughness.y);
+
 	FragColor = vec4(color.xyz, 1.0);
 	NormalColor = vec4(N*0.5 + vec3(0.5),1.0);
 	ExtraColor = vec4(emissive, 1.0);
@@ -866,8 +881,6 @@ void main()
 
 	//store light
 	vec3 light = vec3(0.0);
-	
-
 	
 	
 	if(int(u_light_info.x) == POINT_LIGHT || int(u_light_info.x) == SPOT_LIGHT){
@@ -1327,7 +1340,10 @@ uniform vec2 u_iRes;
 
 uniform vec3 u_ambient_light;
 
-out vec4 FragColor;
+layout(location = 0) out vec4 FragColor;
+layout(location = 1) out vec4 NormalColor;
+layout(location = 2) out vec4 ExtraColor;
+layout(location = 3) out vec4 MetalRoughColor;
 
 void main()
 {
@@ -1352,5 +1368,29 @@ void main()
 	
 	vec4 color = texture(u_color_texture, decal_uv);
 
+	FragColor = color;
+	NormalColor  = vec4(0.0);
+	ExtraColor = vec4(0.0);
+	MetalRoughColor = vec4(0.0);
+}
+
+\reflectionProbe.fs
+
+#version 330 core
+
+in vec3 v_position;
+in vec3 v_normal;
+in vec3 v_world_position;
+
+uniform samplerCube u_texture;
+uniform vec3 u_camera_position;
+out vec4 FragColor;
+
+void main()
+{
+	vec3 N = normalize(v_normal);
+	vec3 E = v_world_position - u_camera_position;
+	vec3 R = reflect(E,N);
+	vec4 color = textureLod( u_texture, R, 2.0);
 	FragColor = color;
 }

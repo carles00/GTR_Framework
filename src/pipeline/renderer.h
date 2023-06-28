@@ -40,6 +40,11 @@ namespace SCN {
 		SphericalHarmonics sh; //coeffs
 	};
 
+	struct sReflectionProbe {
+		vec3 pos;
+		GFX::Texture* texture = nullptr;
+	};
+
 	struct sIrradianceCacheInfo {
 		int num_probes;
 		vec3 dims;
@@ -92,6 +97,7 @@ namespace SCN {
 		bool show_volumetric;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
+		sReflectionProbe probe;
 
 		//shadows
 		GFX::FBO* shadow_atlas_fbo;
@@ -118,6 +124,7 @@ namespace SCN {
 		GFX::FBO* ssao_fbo;
 		GFX::FBO* irr_fbo;
 		GFX::FBO* volumetric_fbo;
+		GFX::FBO* reflection_fbo;
 
 		sIrradianceCacheInfo irradiance_cache_info;
 		std::vector<sProbe> probes;
@@ -155,7 +162,8 @@ namespace SCN {
 		bool cullLights(LightEntity* light, BoundingBox bb);
 		bool spotLightAABB(LightEntity* light, BoundingBox bb);
 		void gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader);
-
+		void captureReflection(sReflectionProbe& probe);
+		void renderReflectionProbe(sReflectionProbe& probe);
 
 		void renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera);
 		void renderAlphaObjects(Camera* camera);
