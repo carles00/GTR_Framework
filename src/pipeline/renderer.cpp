@@ -85,9 +85,13 @@ Renderer::Renderer(const char *shader_atlas_filename)
 	blur = false;
 	enable_bloom = true;
 
-	current_LUT = 1;
-	LUTamount = 0.5;
-	LUT = true;
+	current_LUT = 0;
+	LUTamount = 0.5f;
+	LUT = false;
+
+	DoF = true;
+	min_dof_distance = 0.1f;
+	max_dof_distance = 3.0f;
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -554,6 +558,9 @@ GFX::Texture *selectLUTTexture(int selected)
 	case 1:
 		LUT_path = LUT_path + "neutral-color.png";
 		break;
+	case 2:
+		LUT_path = LUT_path + "inverted-neutral-color.png";
+		break;
 	}
 	return GFX::Texture::Get(LUT_path.c_str());
 }
@@ -637,11 +644,38 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 		std::swap(postfxIN_fbo, postfxOUT_fbo);
 	}
 
+	// DoF
+
+	if (DoF)
+	{
+		GFX::FBO *blurredFBO = new GFX::FBO();
+		blurredFBO->create(width, height, 1, GL_RGB, GL_HALF_FLOAT, false);
+
+		blurredFBO->bind();
+		applyBlur(width, height, postfxIN_fbo->color_textures[0]);
+		blurredFBO->unbind();
+
+		GFX::Shader *dofShader = GFX::Shader::Get("fx_dof");
+
+		dofShader->enable();
+		dofShader->setUniform("u_distance_data", vec2(min_dof_distance, max_dof_distance));
+		dofShader->setTexture("u_outOfFocus_texture", blurredFBO->color_textures[0], 2);
+		dofShader->setTexture("u_depth_texture", depth_buffer, 4);
+		dofShader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+		dofShader->setUniform("u_iRes", vec2(1.0 / postfxIN_fbo->color_textures[0]->width, 1.0 / postfxIN_fbo->color_textures[0]->height));
+		postfxOUT_fbo->bind();
+		postfxIN_fbo->color_textures[0]->toViewport(dofShader);
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+	}
+
 	// final tonemapper
 	GFX::Shader *illumination_shader = GFX::Shader::Get("tonemapper");
 	illumination_shader->enable();
 	illumination_shader->setUniform("u_scale", tonemapper_scale);
-	illumination_shader->setUniform("u_average_lum", average_lum);
+	r
+		illumination_shader->setUniform("u_average_lum", average_lum);
 	illumination_shader->setUniform("u_lumwhite2", lumwhite2);
 	illumination_shader->setUniform("u_igamma", 1.0f / gamma);
 	postfxIN_fbo->color_textures[0]->toViewport(illumination_shader);
@@ -1907,8 +1941,14 @@ void Renderer::showUI()
 		if (LUT)
 		{
 
-			ImGui::Combo("LUT selected", &current_LUT, "brdfLUT\0NeutralColorLUT\0", 1);
+			ImGui::Combo("LUT selected", &current_LUT, "brdfLUT\0NeutralColorLUT\0InvertedNeutralColorLUT\0", 3);
 			ImGui::SliderFloat("LUT amount", &LUTamount, 0.01f, 1.0f);
+		}
+		ToggleButton("Depth of Field", &DoF);
+		if (DoF)
+		{
+			ImGui::SliderFloat("Minimum distance", &min_dof_distance, 0.01f, max_dof_distance - 0.01f);
+			ImGui::SliderFloat("Maximum distance", &max_dof_distance, min_dof_distance + 0.01f, 5.0f);
 		}
 		if (ImGui::TreeNode("Tonemapper"))
 		{

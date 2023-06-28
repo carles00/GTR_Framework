@@ -111,6 +111,7 @@ namespace SCN
 		bool enable_bloom;
 		bool blur;
 		bool LUT;
+		bool DoF;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
 		sReflectionProbe probe;
@@ -140,6 +141,9 @@ namespace SCN
 		std::string selected_LUT;
 		int current_LUT;
 		float LUTamount;
+
+		float min_dof_distance;
+		float max_dof_distance;
 
 		GFX::Texture *skybox_cubemap;
 		// deferred
