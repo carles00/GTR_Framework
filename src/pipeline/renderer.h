@@ -207,7 +207,7 @@ namespace SCN
 		// render the skybox
 		void renderSkybox(GFX::Texture *cubemap);
 
-		void applyBlur(float width, float height, GFX::Texture *color_buffer);
+		void applyBlur(float width, float height, GFX::Texture *color_buffer, GFX::FBO *INfbo, GFX::FBO *OUTfbo);
 
 		void renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth_buffer, Camera *camera);
 
