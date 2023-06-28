@@ -27,6 +27,7 @@ decal basic.vs decal.fs
 fx_color quad.vs color_correction.fs
 fx_blur quad.vs blur.fs
 fx_motion_blur quad.vs motion_blur.fs
+fx_lut quad.vs lut.fs
 
 \basic.vs
 
@@ -1485,4 +1486,40 @@ void main()
 	color /= 16.0;
 
 	FragColor = color;
+}
+
+\lut.fs
+
+#version 330 core
+
+precision highp float;
+precision highp float;
+uniform sampler2D u_texture;
+uniform sampler2D u_textureB;
+uniform float u_amount;
+in vec2 v_uv;
+
+out vec4 FragColor;
+
+
+
+void main() {
+	lowp vec4 color = clamp( texture2D(u_texture, v_uv), vec4(0.0), vec4(1.0) );
+	mediump float blueColor = color.b * 63.0;
+	mediump vec2 quad1;
+	quad1.y = floor(floor(blueColor) / 8.0);
+	quad1.x = floor(blueColor) - (quad1.y * 8.0);
+	mediump vec2 quad2;
+	quad2.y = floor(ceil(blueColor) / 8.0);
+	quad2.x = ceil(blueColor) - (quad2.y * 8.0);
+	highp vec2 texPos1;
+	texPos1.x = (quad1.x * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.r);
+	texPos1.y = 1.0 - ((quad1.y * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.g ));
+	highp vec2 texPos2;
+	texPos2.x = (quad2.x * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.r);
+	texPos2.y = 1.0 - ((quad2.y * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.g));
+	lowp vec4 newColor1 = texture2D(u_textureB, texPos1);
+	lowp vec4 newColor2 = texture2D(u_textureB, texPos2);
+	lowp vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
+	FragColor = vec4( mix( color.rgb, newColor.rgb, u_amount), color.w);
 }
