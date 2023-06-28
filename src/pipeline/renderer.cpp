@@ -14,6 +14,7 @@
 #include "../utils/utils.h"
 #include "../extra/hdre.h"
 #include "../core/ui.h"
+#include <filesystem>
 
 #include "scene.h"
 
@@ -78,6 +79,15 @@ Renderer::Renderer(const char *shader_atlas_filename)
 	postfxOUT_fbo = nullptr;
 	postfxTEMP_fbo = nullptr;
 	Matrix44 prev_viewprojection_matrix = Matrix44::IDENTITY;
+
+	enable_color_correction = false;
+	motion_blur = false;
+	blur = false;
+	enable_bloom = true;
+
+	current_LUT = 1;
+	LUTamount = 0.5;
+	LUT = true;
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
@@ -488,64 +498,8 @@ void Renderer::renderSkybox(GFX::Texture *cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
-void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth_buffer, Camera *camera)
+void Renderer::applyBlur(float width, float height, GFX::Texture *color_buffer)
 {
-	float width = color_buffer->width;
-	float height = color_buffer->height;
-	bool enable_color_correction = false;
-
-	/*glDisable(GL_BLEND);*/
-
-	if (!postfxIN_fbo)
-	{
-		postfxIN_fbo = new GFX::FBO();
-		postfxOUT_fbo = new GFX::FBO();
-		postfxTEMP_fbo = new GFX::FBO();
-		postfxIN_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
-		postfxOUT_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
-		postfxTEMP_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
-	}
-
-	postfxIN_fbo->bind();
-	{
-		color_buffer->toViewport();
-	}
-	postfxIN_fbo->unbind();
-	GFX::Shader *fx_color_shader = GFX::Shader::Get("fx_color");
-	postfxOUT_fbo->bind();
-	{
-		// color correction
-		fx_color_shader->enable();
-		fx_color_shader->setUniform("u_brightness", brightness_fx);
-		color_buffer->toViewport(fx_color_shader);
-	}
-	postfxOUT_fbo->unbind();
-
-	std::swap(postfxIN_fbo, postfxOUT_fbo);
-
-	// motion blur
-	GFX::Shader *fx_motion_blur_shader = GFX::Shader::Get("fx_motion_blur");
-	fx_motion_blur_shader->enable();
-	fx_motion_blur_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
-	fx_motion_blur_shader->setUniform("u_prev_vp", prev_viewprojection_matrix);
-	fx_motion_blur_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->width, 1.0 / gbuffers_fbo->height));
-	fx_motion_blur_shader->setUniform("u_depth_texture", depth_buffer, 4);
-	postfxOUT_fbo->bind();
-	{
-		postfxIN_fbo->color_textures[0]->toViewport(fx_motion_blur_shader);
-	}
-	postfxOUT_fbo->unbind();
-	prev_viewprojection_matrix = camera->viewprojection_matrix;
-	std::swap(postfxIN_fbo, postfxOUT_fbo);
-
-	// save image
-	postfxTEMP_fbo->bind();
-	{
-		postfxIN_fbo->color_textures[0]->toViewport(fx_color_shader);
-	}
-	postfxTEMP_fbo->unbind();
-
-	// bloom
 	GFX::Shader *fx_blur_shader = GFX::Shader::Get("fx_blur");
 	fx_blur_shader->enable();
 	fx_blur_shader->setUniform("u_intensity", blur_intensity);
@@ -579,10 +533,109 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 	{
 		glEnable(GL_BLEND);
 		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-		postfxTEMP_fbo->color_textures[0]->toViewport();
+		if (postfxTEMP_fbo)
+			postfxTEMP_fbo->color_textures[0]->toViewport();
+		else
+			color_buffer->toViewport();
 	}
 	postfxIN_fbo->unbind();
+
 	glDisable(GL_BLEND);
+}
+
+GFX::Texture *selectLUTTexture(int selected)
+{
+	std::string LUT_path = "data/textures/LUT/";
+	switch (selected)
+	{
+	case 0:
+		LUT_path = LUT_path + "brdfLUT.png";
+		break;
+	case 1:
+		LUT_path = LUT_path + "neutral-color.png";
+		break;
+	}
+	return GFX::Texture::Get(LUT_path.c_str());
+}
+
+void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth_buffer, Camera *camera)
+{
+	float width = color_buffer->width;
+	float height = color_buffer->height;
+
+	if (!postfxIN_fbo)
+	{
+		postfxIN_fbo = new GFX::FBO();
+		postfxOUT_fbo = new GFX::FBO();
+		postfxTEMP_fbo = new GFX::FBO();
+		postfxIN_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+		postfxOUT_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+		postfxTEMP_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+	}
+
+	postfxIN_fbo->bind();
+	{
+		color_buffer->toViewport();
+	}
+	postfxIN_fbo->unbind();
+	if (enable_color_correction)
+	{
+
+		GFX::Shader *fx_color_shader = GFX::Shader::Get("fx_color");
+		postfxOUT_fbo->bind();
+		{
+			// color correction
+			fx_color_shader->enable();
+			fx_color_shader->setUniform("u_brightness", brightness_fx);
+			color_buffer->toViewport(fx_color_shader);
+		}
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+		// save image
+		postfxTEMP_fbo->bind();
+		{
+			postfxIN_fbo->color_textures[0]->toViewport(fx_color_shader);
+		}
+		postfxTEMP_fbo->unbind();
+	}
+
+	// motion blur
+	GFX::Shader *fx_motion_blur_shader = GFX::Shader::Get("fx_motion_blur");
+	fx_motion_blur_shader->enable();
+	fx_motion_blur_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+	fx_motion_blur_shader->setUniform("u_prev_vp", prev_viewprojection_matrix);
+	fx_motion_blur_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->width, 1.0 / gbuffers_fbo->height));
+	fx_motion_blur_shader->setUniform("u_depth_texture", depth_buffer, 4);
+	postfxOUT_fbo->bind();
+	{
+		postfxIN_fbo->color_textures[0]->toViewport(fx_motion_blur_shader);
+	}
+	postfxOUT_fbo->unbind();
+	prev_viewprojection_matrix = camera->viewprojection_matrix;
+	std::swap(postfxIN_fbo, postfxOUT_fbo);
+
+	// blur
+	if (blur)
+	{
+		applyBlur(width, height, color_buffer);
+	}
+
+	// LUT
+	if (LUT)
+	{
+		GFX::Texture *LUT_texture = selectLUTTexture(current_LUT);
+		GFX::Shader *LUT_shader = GFX::Shader::Get("fx_lut");
+
+		LUT_shader->enable();
+		postfxOUT_fbo->bind();
+		LUT_shader->setUniform("u_textureB", LUT_texture, 1);
+		LUT_shader->setUniform("u_amount", LUTamount);
+		postfxIN_fbo->color_textures[0]->toViewport(LUT_shader);
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+	}
 
 	// final tonemapper
 	GFX::Shader *illumination_shader = GFX::Shader::Get("tonemapper");
@@ -1774,14 +1827,6 @@ void Renderer::showUI()
 	ImGui::Combo("Render Mode", (int *)&render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 
 	ToggleButton("Activate PBR", &pbr_is_active);
-	if (ImGui::TreeNode("Tonemapper"))
-	{
-		ImGui::SliderFloat("Scale", &tonemapper_scale, 0.01, 2.0);
-		ImGui::SliderFloat("Average lum", &average_lum, 0.01, 2.0);
-		ImGui::SliderFloat("Lum white", &lumwhite2, 0.01, 2.0);
-		ImGui::SliderFloat("Gamma", &gamma, 0.01, 2.0);
-		ImGui::TreePop();
-	}
 
 	ToggleButton("Show SSAO", &show_ssao);
 	if (show_ssao)
@@ -1833,7 +1878,7 @@ void Renderer::showUI()
 		captureReflection(probe);
 
 	ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
-	ToggleButton("Eanble Volumetric", &enable_volumetric);
+	ToggleButton("Enable Volumetric", &enable_volumetric);
 	if (enable_volumetric)
 	{
 		if (ImGui::TreeNode("Volumetric parameters"))
@@ -1845,8 +1890,34 @@ void Renderer::showUI()
 
 	if (ImGui::TreeNode("PostFX parameters"))
 	{
-		ImGui::SliderFloat("Brightness", &brightness_fx, 0.01f, 5.0f);
-		ImGui::SliderFloat("Blur intensity", &blur_intensity, 0.01f, 5.0f);
+		ToggleButton("Enable color correction", &enable_color_correction);
+		if (enable_color_correction)
+			ImGui::SliderFloat("Brightness", &brightness_fx, 0.01f, 5.0f);
+		ToggleButton("Motion blur", &motion_blur);
+		ToggleButton("Blur", &blur);
+		if (blur)
+			ImGui::SliderFloat("Blur intensity", &blur_intensity, 0.01f, 5.0f);
+
+		/*ToggleButton("Bloom/Glow", &enable_bloom);
+		if (enable_bloom)
+		{
+			ImGui::SliderInt("Downsample Iterations", &downsample_iterations, 2, 8);
+		}*/
+		ToggleButton("LUT", &LUT);
+		if (LUT)
+		{
+
+			ImGui::Combo("LUT selected", &current_LUT, "brdfLUT\0NeutralColorLUT\0", 1);
+			ImGui::SliderFloat("LUT amount", &LUTamount, 0.01f, 1.0f);
+		}
+		if (ImGui::TreeNode("Tonemapper"))
+		{
+			ImGui::SliderFloat("Scale", &tonemapper_scale, 0.01, 2.0);
+			ImGui::SliderFloat("Average lum", &average_lum, 0.01, 2.0);
+			ImGui::SliderFloat("Lum white", &lumwhite2, 0.01, 2.0);
+			ImGui::SliderFloat("Gamma", &gamma, 0.01, 2.0);
+			ImGui::TreePop();
+		}
 		ImGui::TreePop();
 	}
 }
