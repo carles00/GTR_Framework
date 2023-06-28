@@ -28,6 +28,7 @@ fx_color quad.vs color_correction.fs
 fx_blur quad.vs blur.fs
 fx_motion_blur quad.vs motion_blur.fs
 fx_lut quad.vs lut.fs
+fx_dof quad.vs dof.fs
 
 \basic.vs
 
@@ -1493,7 +1494,7 @@ void main()
 #version 330 core
 
 precision highp float;
-precision highp float;
+precision mediump float;
 uniform sampler2D u_texture;
 uniform sampler2D u_textureB;
 uniform float u_amount;
@@ -1522,4 +1523,40 @@ void main() {
 	lowp vec4 newColor2 = texture2D(u_textureB, texPos2);
 	lowp vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
 	FragColor = vec4( mix( color.rgb, newColor.rgb, u_amount), color.w);
+}
+
+\dof.fs
+
+#version 330 core
+
+uniform sampler2D u_texture;
+uniform sampler2D u_outOfFocus_texture;
+uniform sampler2D u_depth_texture;
+uniform vec2 u_distance_data;
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+
+in vec2 v_uv;
+
+out vec4 FragColor;
+
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture(u_depth_texture, uv).x;
+	if(depth == 1.0) discard;
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+	vec4 inFocus = texture(u_texture, uv);
+	vec4 outOfFocus = texture(u_outOfFocus_texture, uv);
+
+	vec4 albedo_texture = texture(u_texture, uv);
+
+	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(world_position.z - depth));
+
+
+	FragColor = mix(inFocus, outOfFocus, blur);
 }
