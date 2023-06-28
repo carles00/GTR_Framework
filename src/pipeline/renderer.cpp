@@ -90,7 +90,7 @@ Renderer::Renderer(const char *shader_atlas_filename)
 	LUT = false;
 
 	DoF = true;
-	min_dof_distance = 0.1f;
+	min_dof_distance = 1.0f;
 	max_dof_distance = 3.0f;
 
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
@@ -502,7 +502,7 @@ void Renderer::renderSkybox(GFX::Texture *cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
-void Renderer::applyBlur(float width, float height, GFX::Texture *color_buffer)
+void Renderer::applyBlur(float width, float height, GFX::Texture *color_buffer, GFX::FBO *INfbo, GFX::FBO *OUTfbo)
 {
 	GFX::Shader *fx_blur_shader = GFX::Shader::Get("fx_blur");
 	fx_blur_shader->enable();
@@ -512,23 +512,23 @@ void Renderer::applyBlur(float width, float height, GFX::Texture *color_buffer)
 	for (size_t i = 0; i < 4; i++)
 	{
 		fx_blur_shader->setUniform("u_offset", vec2((float)power / width, 0.0f));
-		fx_blur_shader->setUniform("u_texture", postfxIN_fbo->color_textures[0], 0);
-		postfxOUT_fbo->bind();
+		fx_blur_shader->setUniform("u_texture", INfbo->color_textures[0], 0);
+		OUTfbo->bind();
 		{
 			GFX::Mesh::getQuad()->render(GL_TRIANGLES);
 		}
-		postfxOUT_fbo->unbind();
-		std::swap(postfxIN_fbo, postfxOUT_fbo);
+		OUTfbo->unbind();
+		std::swap(OUTfbo, INfbo);
 
 		fx_blur_shader->enable();
 		fx_blur_shader->setUniform("u_offset", vec2(0.0f, (float)power / height));
-		fx_blur_shader->setUniform("u_texture", postfxIN_fbo->color_textures[0], 0);
-		postfxOUT_fbo->bind();
+		fx_blur_shader->setUniform("u_texture", INfbo->color_textures[0], 0);
+		OUTfbo->bind();
 		{
 			GFX::Mesh::getQuad()->render(GL_TRIANGLES);
 		}
-		postfxOUT_fbo->unbind();
-		std::swap(postfxIN_fbo, postfxOUT_fbo);
+		OUTfbo->unbind();
+		std::swap(INfbo, OUTfbo);
 
 		power = power << 1;
 	}
@@ -585,6 +585,11 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 		color_buffer->toViewport();
 	}
 	postfxIN_fbo->unbind();
+	postfxTEMP_fbo->bind();
+	{
+		color_buffer->toViewport();
+	}
+	postfxTEMP_fbo->unbind();
 	if (enable_color_correction)
 	{
 
@@ -625,7 +630,7 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 	// blur
 	if (blur)
 	{
-		applyBlur(width, height, color_buffer);
+		applyBlur(width, height, color_buffer, postfxIN_fbo, postfxOUT_fbo);
 	}
 
 	// LUT
@@ -648,22 +653,18 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 
 	if (DoF)
 	{
-		GFX::FBO *blurredFBO = new GFX::FBO();
-		blurredFBO->create(width, height, 1, GL_RGB, GL_HALF_FLOAT, false);
 
-		blurredFBO->bind();
-		applyBlur(width, height, postfxIN_fbo->color_textures[0]);
-		blurredFBO->unbind();
+		applyBlur(width, height, postfxIN_fbo->color_textures[0], postfxTEMP_fbo, postfxOUT_fbo);
 
 		GFX::Shader *dofShader = GFX::Shader::Get("fx_dof");
-
 		dofShader->enable();
-		dofShader->setUniform("u_distance_data", vec2(min_dof_distance, max_dof_distance));
-		dofShader->setTexture("u_outOfFocus_texture", blurredFBO->color_textures[0], 2);
-		dofShader->setTexture("u_depth_texture", depth_buffer, 4);
-		dofShader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
-		dofShader->setUniform("u_iRes", vec2(1.0 / postfxIN_fbo->color_textures[0]->width, 1.0 / postfxIN_fbo->color_textures[0]->height));
 		postfxOUT_fbo->bind();
+		dofShader->setUniform("u_distance_data", vec2(min_dof_distance, max_dof_distance));
+		dofShader->setTexture("u_outOfFocus_texture", postfxTEMP_fbo->color_textures[0], 2);
+		dofShader->setUniform("u_depth_texture", depth_buffer, 4);
+		dofShader->setUniform("u_camera_eye", camera->center);
+		dofShader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+		dofShader->setUniform("u_iRes", vec2(1.0 / width, 1.0 / height));
 		postfxIN_fbo->color_textures[0]->toViewport(dofShader);
 		postfxOUT_fbo->unbind();
 
@@ -674,8 +675,7 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 	GFX::Shader *illumination_shader = GFX::Shader::Get("tonemapper");
 	illumination_shader->enable();
 	illumination_shader->setUniform("u_scale", tonemapper_scale);
-	r
-		illumination_shader->setUniform("u_average_lum", average_lum);
+	illumination_shader->setUniform("u_average_lum", average_lum);
 	illumination_shader->setUniform("u_lumwhite2", lumwhite2);
 	illumination_shader->setUniform("u_igamma", 1.0f / gamma);
 	postfxIN_fbo->color_textures[0]->toViewport(illumination_shader);
@@ -1948,7 +1948,7 @@ void Renderer::showUI()
 		if (DoF)
 		{
 			ImGui::SliderFloat("Minimum distance", &min_dof_distance, 0.01f, max_dof_distance - 0.01f);
-			ImGui::SliderFloat("Maximum distance", &max_dof_distance, min_dof_distance + 0.01f, 5.0f);
+			ImGui::SliderFloat("Maximum distance", &max_dof_distance, min_dof_distance + 0.01f, 50.0f);
 		}
 		if (ImGui::TreeNode("Tonemapper"))
 		{

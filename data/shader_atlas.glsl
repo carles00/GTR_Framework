@@ -1532,7 +1532,8 @@ void main() {
 uniform sampler2D u_texture;
 uniform sampler2D u_outOfFocus_texture;
 uniform sampler2D u_depth_texture;
-uniform vec2 u_distance_data;
+uniform vec2 u_distance_data; //x = min distance, y = max_distance
+uniform vec3 u_camera_center;
 uniform mat4 u_ivp;
 uniform vec2 u_iRes;
 
@@ -1553,9 +1554,7 @@ void main()
 	vec4 inFocus = texture(u_texture, uv);
 	vec4 outOfFocus = texture(u_outOfFocus_texture, uv);
 
-	vec4 albedo_texture = texture(u_texture, uv);
-
-	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(world_position.z - depth));
+	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(world_position.x));
 
 
 	FragColor = mix(inFocus, outOfFocus, blur);
