@@ -122,29 +122,29 @@ Renderer::Renderer(const char *shader_atlas_filename)
 void Renderer::captureIrradiance()
 {
 	update_probes = false;
-	// when computing the probes position�
+	//when computing the probes position…
 
-	// define the corners of the axis aligned grid
-	// this can be done using the boundings of our scene
+	//define the corners of the axis aligned grid
+	//this can be done using the boundings of our scene
 	vec3 start_pos(-300, 5, -400);
 	vec3 end_pos(300, 150, 400);
 
-	// define how many probes you want per dimension
+	//define how many probes you want per dimension
 	vec3 dim(10, 4, 10);
 
-	// compute the vector from one corner to the other
+	//compute the vector from one corner to the other
 	vec3 delta = (end_pos - start_pos);
 
-	// and scale it down according to the subdivisions
-	// we substract one to be sure the last probe is at end pos
+	//and scale it down according to the subdivisions
+	//we substract one to be sure the last probe is at end pos
 	delta.x /= (dim.x - 1);
 	delta.y /= (dim.y - 1);
 	delta.z /= (dim.z - 1);
-	// now delta give us the distance between probes in every axis
+	//now delta give us the distance between probes in every axis
 
 	probes.resize(dim.x * dim.y * dim.z);
-	// lets compute the centers
-	// pay attention at the order at which we add them
+	//lets compute the centers
+	//pay attention at the order at which we add them
 	for (int z = 0; z < dim.z; z++)
 	{
 		for (int y = 0; y < dim.y; y++)
@@ -154,23 +154,24 @@ void Renderer::captureIrradiance()
 				sProbe p;
 				p.local.set(x, y, z);
 
-				// index in the linear array
+				//index in the linear array
 				p.index = x + y * dim.x + z * dim.x * dim.y;
 
-				// and its position
+				//and its position
 				p.pos = start_pos + delta * vec3(x, y, z);
 				probes[p.index] = p;
-				// probes.push_back(p);
+				//probes.push_back(p);
 			}
 		}
 	}
 	for (int iP = 0; iP < probes.size(); iP++)
 	{
-		sProbe &probe = probes[iP];
+		sProbe& probe = probes[iP];
 		captureProbe(probe);
 	}
 
-	FILE *f = fopen("irradiance_cache.bin", "wb");
+
+	FILE* f = fopen("irradiance_cache.bin", "wb");
 	if (f == NULL)
 		return;
 
@@ -207,30 +208,30 @@ void Renderer::uploadIrradianceCache()
 
 	vec3 dim = irradiance_cache_info.dims;
 
-	// create the texture to store the probes (do this ONCE!!!)
+	//create the texture to store the probes (do this ONCE!!!)
 	probes_texture = new GFX::Texture(
-		9,			   // 9 coefficients per probe
-		probes.size(), // as many rows as probes
-		GL_RGB,		   // 3 channels per coefficient
-		GL_FLOAT);	   // they require a high range
+		9, //9 coefficients per probe
+		probes.size(), //as many rows as probes
+		GL_RGB, //3 channels per coefficient
+		GL_FLOAT); //they require a high range
 
-	// we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
-	SphericalHarmonics *sh_data = NULL;
+	//we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
+	SphericalHarmonics* sh_data = NULL;
 	sh_data = new SphericalHarmonics[dim.x * dim.y * dim.z];
 
-	// here we fill the data of the array with our probes in x,y,z order
+	//here we fill the data of the array with our probes in x,y,z order
 	for (int i = 0; i < probes.size(); ++i)
 		sh_data[i] = probes[i].sh;
 
-	// now upload the data to the GPU as a texture
-	probes_texture->upload(GL_RGB, GL_FLOAT, false, (uint8 *)sh_data);
+	//now upload the data to the GPU as a texture
+	probes_texture->upload(GL_RGB, GL_FLOAT, false, (uint8*)sh_data);
 
-	// disable any texture filtering when reading
+	//disable any texture filtering when reading
 	probes_texture->bind();
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-	// always free memory after allocating it!!!
+	//always free memory after allocating it!!!
 	delete[] sh_data;
 }
 
@@ -611,6 +612,8 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 			postfxIN_fbo->color_textures[0]->toViewport(fx_color_shader);
 		}
 		postfxTEMP_fbo->unbind();
+
+		
 	}
 
 	// motion blur
@@ -680,6 +683,15 @@ void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth
 	illumination_shader->setUniform("u_lumwhite2", lumwhite2);
 	illumination_shader->setUniform("u_igamma", 1.0f / gamma);
 	postfxIN_fbo->color_textures[0]->toViewport(illumination_shader);
+
+	if (enable_volumetric)
+	{
+		glDisable(GL_DEPTH_TEST);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		volumetric_fbo->color_textures[0]->toViewport();
+		glDisable(GL_BLEND);
+	}
 }
 
 // renders a mesh given its transform and material
@@ -1428,14 +1440,7 @@ void Renderer::renderDeferred(Camera *camera)
 
 		glEnable(GL_DEPTH_TEST);
 
-		if (enable_volumetric)
-		{
-			glDisable(GL_DEPTH_TEST);
-			glEnable(GL_BLEND);
-			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-			volumetric_fbo->color_textures[0]->toViewport();
-			glDisable(GL_BLEND);
-		}
+		
 
 		if (show_gbuffers)
 			renderGBuffers();
