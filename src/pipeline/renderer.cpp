@@ -89,7 +89,7 @@ Renderer::Renderer(const char *shader_atlas_filename)
 	LUTamount = 0.5f;
 	LUT = false;
 
-	DoF = true;
+	DoF = false;
 	min_dof_distance = 1.0f;
 	max_dof_distance = 3.0f;
 
