@@ -516,8 +516,6 @@ void main()
 		
 		vec3 direct = Fr_d + Fd_d;
 
-
-
 		light += max(NdotL, 0.0)* u_light_color * shadow_factor * direct;		
 	}
 	
@@ -892,10 +890,10 @@ void main()
 		vec3 L = u_light_position - world_position;
 		float dist = length(L);
 		L /= dist;
-		float NdotL = dot(N, L);
 		vec3 H = (V + L) / 2;
-		float NdotH = dot(N, H);
 		float NdotV = dot(N, V);
+		float NdotL = dot(N, L);
+		float NdotH = dot(N, H);
 		float LdotH = dot(L, H);
 		//compute the specular 
 		vec3 Fr_d = specularBRDF(  metalic_roughness.g, f0, NdotH, NdotV, NdotL, LdotH);
