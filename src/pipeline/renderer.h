@@ -2,50 +2,56 @@
 #include "scene.h"
 #include "prefab.h"
 
-#include "light.h"
 #include "../gfx/sphericalharmonics.h"
+#include "light.h"
 
 #define MAX_LIGHTS 10
-//forward declarations
+// forward declarations
 
 class Camera;
 class Skeleton;
-namespace GFX {
+namespace GFX
+{
 	class Shader;
 	class Mesh;
 	class FBO;
 }
 
-namespace SCN {
+namespace SCN
+{
 
 	class Prefab;
 	class Material;
-	enum eRenderMode {
+	enum eRenderMode
+	{
 		FLAT,
 		TEXTURED,
 		LIGHTS_MULTIPASS,
 		LIGHTS_SINGLEPASS,
 		DEFERRED
 	};
-	
-	struct sLightsContainer {
-		std::vector<LightEntity*> lights;
+
+	struct sLightsContainer
+	{
+		std::vector<LightEntity *> lights;
 	};
 
-
-	struct sProbe {
-		vec3 pos; //where is located
-		vec3 local; //its ijk pos in the matrix
-		int index; //its index in the linear array
-		SphericalHarmonics sh; //coeffs
+	struct sProbe
+	{
+		vec3 pos;			   // where is located
+		vec3 local;			   // its ijk pos in the matrix
+		int index;			   // its index in the linear array
+		SphericalHarmonics sh; // coeffs
 	};
 
-	struct sReflectionProbe {
+	struct sReflectionProbe
+	{
 		vec3 pos;
-		GFX::Texture* texture = nullptr;
+		GFX::Texture *texture = nullptr;
 	};
 
-	struct sIrradianceCacheInfo {
+	struct sIrradianceCacheInfo
+	{
 		int num_probes;
 		vec3 dims;
 		vec3 start;
@@ -54,19 +60,21 @@ namespace SCN {
 
 	// This class is in charge of rendering anything in our system.
 	// Separating the render from anything else makes the code cleaner
-	class RenderCall {
+	class RenderCall
+	{
 	public:
-		GFX::Mesh* mesh;
-		Material* material;
+		GFX::Mesh *mesh;
+		Material *material;
 		Matrix44 model;
-		
-		static bool render_call_sort(RenderCall a, RenderCall b) {
+
+		static bool render_call_sort(RenderCall a, RenderCall b)
+		{
 			return (a.distance_to_camera < b.distance_to_camera);
 		}
-		static bool render_call_alpha_sort(RenderCall a, RenderCall b) {
+		static bool render_call_alpha_sort(RenderCall a, RenderCall b)
+		{
 			return (a.distance_to_camera > b.distance_to_camera);
 		}
-
 
 		float distance_to_camera;
 	};
@@ -74,7 +82,7 @@ namespace SCN {
 	class Renderer
 	{
 	public:
-		//ImGui options
+		// ImGui options
 		bool render_wireframe;
 		bool render_boundaries;
 		bool show_shadowmaps;
@@ -93,18 +101,31 @@ namespace SCN {
 		bool update_probes;
 		int buffers_to_show[4];
 		float ssao_radius;
+		float brightness_fx;
+		float blur_intensity;
 		bool enable_volumetric;
 		bool show_volumetric;
 		bool show_reflection_probe;
+		bool enable_color_correction;
+		bool motion_blur;
+		bool enable_bloom;
+		bool blur;
+		bool LUT;
+		bool DoF;
 		std::vector<vec3> random_points;
 		std::vector<vec3> copy_random_points;
 		sReflectionProbe probe;
 
-		//shadows
-		GFX::FBO* shadow_atlas_fbo;
-		GFX::Texture* shadow_atlas;
-		GFX::Texture* ssao_blur;
-		GFX::Texture* probes_texture;
+		// shadows
+		GFX::FBO *shadow_atlas_fbo;
+		GFX::FBO *postfxIN_fbo;
+		GFX::FBO *postfxOUT_fbo;
+		GFX::FBO *postfxTEMP_fbo;
+		Matrix44 prev_viewprojection_matrix;
+
+		GFX::Texture *shadow_atlas;
+		GFX::Texture *ssao_blur;
+		GFX::Texture *probes_texture;
 
 		float shadow_atlas_width;
 		float shadow_atlas_height;
@@ -117,87 +138,96 @@ namespace SCN {
 		float gamma;
 		float irradiance_multiplier;
 
-		GFX::Texture* skybox_cubemap;
-		//deferred
-		GFX::FBO* gbuffers_fbo;
-		GFX::Texture* clone_depth_buffer;
-		GFX::FBO* illumination_fbo;
-		GFX::FBO* ssao_fbo;
-		GFX::FBO* irr_fbo;
-		GFX::FBO* volumetric_fbo;
-		GFX::FBO* reflection_fbo;
+		std::string selected_LUT;
+		int current_LUT;
+		float LUTamount;
+
+		float min_dof_distance;
+		float max_dof_distance;
+
+		GFX::Texture *skybox_cubemap;
+		// deferred
+		GFX::FBO *gbuffers_fbo;
+		GFX::Texture *clone_depth_buffer;
+		GFX::FBO *illumination_fbo;
+		GFX::FBO *ssao_fbo;
+		GFX::FBO *irr_fbo;
+		GFX::FBO *volumetric_fbo;
+		GFX::FBO *reflection_fbo;
 
 		sIrradianceCacheInfo irradiance_cache_info;
 		std::vector<sProbe> probes;
 
-
-		SCN::Scene* scene;
-		//render calls vector
+		SCN::Scene *scene;
+		// render calls vector
 		std::vector<RenderCall> render_order;
 		std::vector<RenderCall> render_order_alpha;
-		std::vector<LightEntity*> lights;
-		std::vector<DecalEntity*> decals;
-		//Volumetric params
+		std::vector<LightEntity *> lights;
+		std::vector<DecalEntity *> decals;
+		// Volumetric params
 		float air_density;
 
-		//updated every frame
-		Renderer(const char* shaders_atlas_filename );
+		// updated every frame
+		Renderer(const char *shaders_atlas_filename);
 
-		//just to be sure we have everything ready for the rendering
-		void setupScene(Camera* camera);
+		// just to be sure we have everything ready for the rendering
+		void setupScene(Camera *camera);
 
-		//add here your functions
+		// add here your functions
 		//...
-		void renderFrame(Camera* camera);
+		void renderFrame(Camera *camera);
 		void captureIrradiance();
 		void loadIrradianceCache();
 		void uploadIrradianceCache();
-		void createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos);
+		void createRenderCall(Matrix44 model, GFX::Mesh *mesh, SCN::Material *material, vec3 camera_pos);
 		void renderGBuffers();
-		void renderDeferred(Camera* camera);
-		void renderForward(Camera* camera);
-		void walkEntities(SCN::Node* node, Camera* camera);
-		void singlePass(RenderCall* rc, GFX::Shader* shader);
-		void multiPass(RenderCall* rc, GFX::Shader* shader);
+		void renderDeferred(Camera *camera);
+		void renderForward(Camera *camera);
+		void walkEntities(SCN::Node *node, Camera *camera);
+		void singlePass(RenderCall *rc, GFX::Shader *shader);
+		void multiPass(RenderCall *rc, GFX::Shader *shader);
 		void generateShadowmaps();
-		bool cullLights(LightEntity* light, BoundingBox bb);
-		bool spotLightAABB(LightEntity* light, BoundingBox bb);
-		void gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader);
-		void captureReflection(sReflectionProbe& probe);
-		void renderReflectionProbe(sReflectionProbe& probe);
+		bool cullLights(LightEntity *light, BoundingBox bb);
+		bool spotLightAABB(LightEntity *light, BoundingBox bb);
+		void gbuffersToShader(GFX::FBO *gbuffers, GFX::Shader *shader);
+		void captureReflection(sReflectionProbe &probe);
+		void renderReflectionProbe(sReflectionProbe &probe);
 
-		void renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera);
-		void renderAlphaObjects(Camera* camera);
+		void renderMeshWithMaterialGBuffers(RenderCall *rc, Camera *camera);
+		void renderAlphaObjects(Camera *camera);
 
-		//debug
+		// debug
 		void showShadowmaps();
-		
-		//renders several elements of the scene
-		void renderScene(SCN::Scene* scene, Camera* camera);
 
-		void renderSceneNodes(Camera* camera);
+		// renders several elements of the scene
+		void renderScene(SCN::Scene *scene, Camera *camera);
 
-		//render the skybox
-		void renderSkybox(GFX::Texture* cubemap);
-	
-		//to render one node from the prefab and its children
-		void renderNode(SCN::Node* node, Camera* camera);
+		void renderSceneNodes(Camera *camera);
 
-		void renderProbe(sProbe& probe);
+		// render the skybox
+		void renderSkybox(GFX::Texture *cubemap);
+
+		void applyBlur(float width, float height, GFX::Texture *color_buffer, GFX::FBO *INfbo, GFX::FBO *OUTfbo);
+
+		void renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth_buffer, Camera *camera);
+
+		// to render one node from the prefab and its children
+		void renderNode(SCN::Node *node, Camera *camera);
+
+		void renderProbe(sProbe &probe);
 		void applyIrradiance();
-		void captureProbe(sProbe& probe);
+		void captureProbe(sProbe &probe);
 
-		//to render one mesh given its material and transformation matrix
-		void renderMeshWithMaterial(RenderCall* rc, Camera* camera);
-		void renderMeshWithMaterialFlat(RenderCall* rc, Camera* camera);
-		void renderMeshWithMaterialLight(RenderCall* rc, Camera* camera);
+		// to render one mesh given its material and transformation matrix
+		void renderMeshWithMaterial(RenderCall *rc, Camera *camera);
+		void renderMeshWithMaterialFlat(RenderCall *rc, Camera *camera);
+		void renderMeshWithMaterialLight(RenderCall *rc, Camera *camera);
 
 		void showUI();
 
-		void cameraToShader(Camera* camera, GFX::Shader* shader); //sends camera uniforms to shader
-		void lightToShader(LightEntity* light, GFX::Shader* shader);
+		void cameraToShader(Camera *camera, GFX::Shader *shader); // sends camera uniforms to shader
+		void lightToShader(LightEntity *light, GFX::Shader *shader);
 		std::vector<vec3> generateSpherePoints(int num, float radius, bool hemi);
 	};
 
 };
-

@@ -24,6 +24,12 @@ volumetric quad.vs volumetric.fs
 
 decal basic.vs decal.fs
 
+fx_color quad.vs color_correction.fs
+fx_blur quad.vs blur.fs
+fx_motion_blur quad.vs motion_blur.fs
+fx_lut quad.vs lut.fs
+fx_dof quad.vs dof.fs
+
 \basic.vs
 
 #version 330 core
@@ -1391,4 +1397,163 @@ void main()
 	vec3 R = reflect(E,N);
 	vec4 color = textureLod( u_texture, R, 2.0);
 	FragColor = color;
+}
+
+
+\color_correction.fs
+
+#version 330 core
+
+uniform sampler2D u_texture;
+uniform float u_brightness;
+in vec2 v_uv;
+out vec4 FragColor;
+
+
+
+void main()
+{
+	vec4 color = texture(u_texture, v_uv);
+
+	color.xyz *= u_brightness;
+
+	FragColor = color;
+}
+
+\blur.fs
+
+#version 330 core
+
+//linear blur shader of 9 samples
+precision highp float;
+uniform sampler2D u_texture;
+in vec2 v_uv;
+out vec4 FragColor;
+
+uniform vec2 u_offset;
+uniform float u_intensity;
+
+void main() {
+   vec4 sum = vec4(0.0);
+   sum += texture(u_texture, v_uv + u_offset * -4.0) * 0.05/0.98;
+   sum += texture(u_texture, v_uv + u_offset * -3.0) * 0.09/0.98;
+   sum += texture(u_texture, v_uv + u_offset * -2.0) * 0.12/0.98;
+   sum += texture(u_texture, v_uv + u_offset * -1.0) * 0.15/0.98;
+   sum += texture(u_texture, v_uv) * 0.16/0.98;
+   sum += texture(u_texture, v_uv + u_offset * 4.0) * 0.05/0.98;
+   sum += texture(u_texture, v_uv + u_offset * 3.0) * 0.09/0.98;
+   sum += texture(u_texture, v_uv + u_offset * 2.0) * 0.12/0.98;
+   sum += texture(u_texture, v_uv + u_offset * 1.0) * 0.15/0.98;
+   FragColor = sum * u_intensity;
+}
+
+
+\motion_blur.fs
+
+#version 330 core
+
+uniform sampler2D u_texture;
+uniform sampler2D u_depth_texture;
+uniform mat4 u_ivp;
+uniform mat4 u_prev_vp;
+uniform vec2 u_iRes;
+in vec2 v_uv;
+out vec4 FragColor;
+
+
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture( u_depth_texture, uv ).x;
+
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+	vec4 prev_screenpos = u_prev_vp * vec4( world_position, 1.0 );
+	prev_screenpos.xyz /= prev_screenpos.w;
+	vec2 prev_uv = prev_screenpos.xy * 0.5 + vec2(0.5);
+	
+	vec4 color = vec4(0.0);
+	for(int i = 0; i < 16; ++i)
+	{
+		vec2 int_uv = mix(uv, prev_uv, float(i)/16.0);
+		color += texture(u_texture, int_uv);
+	}
+
+	color /= 16.0;
+
+	FragColor = color;
+}
+
+\lut.fs
+
+#version 330 core
+
+precision highp float;
+precision mediump float;
+uniform sampler2D u_texture;
+uniform sampler2D u_textureB;
+uniform float u_amount;
+in vec2 v_uv;
+
+out vec4 FragColor;
+
+
+
+void main() {
+	lowp vec4 color = clamp( texture2D(u_texture, v_uv), vec4(0.0), vec4(1.0) );
+	mediump float blueColor = color.b * 63.0;
+	mediump vec2 quad1;
+	quad1.y = floor(floor(blueColor) / 8.0);
+	quad1.x = floor(blueColor) - (quad1.y * 8.0);
+	mediump vec2 quad2;
+	quad2.y = floor(ceil(blueColor) / 8.0);
+	quad2.x = ceil(blueColor) - (quad2.y * 8.0);
+	highp vec2 texPos1;
+	texPos1.x = (quad1.x * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.r);
+	texPos1.y = 1.0 - ((quad1.y * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.g ));
+	highp vec2 texPos2;
+	texPos2.x = (quad2.x * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.r);
+	texPos2.y = 1.0 - ((quad2.y * 0.125) + 0.5/512.0 + ((0.125 - 1.0/512.0) * color.g));
+	lowp vec4 newColor1 = texture2D(u_textureB, texPos1);
+	lowp vec4 newColor2 = texture2D(u_textureB, texPos2);
+	lowp vec4 newColor = mix(newColor1, newColor2, fract(blueColor));
+	FragColor = vec4( mix( color.rgb, newColor.rgb, u_amount), color.w);
+}
+
+\dof.fs
+
+#version 330 core
+
+uniform sampler2D u_texture;
+uniform sampler2D u_outOfFocus_texture;
+uniform sampler2D u_depth_texture;
+uniform vec2 u_distance_data; //x = min distance, y = max_distance
+uniform vec3 u_camera_center;
+uniform mat4 u_ivp;
+uniform vec2 u_iRes;
+
+in vec2 v_uv;
+
+out vec4 FragColor;
+
+
+void main()
+{
+	vec2 uv = gl_FragCoord.xy * u_iRes.xy;
+	float depth = texture(u_depth_texture, uv).x;
+	if(depth == 1.0) discard;
+	vec4 screen_pos = vec4(uv.x * 2.0 - 1.0, uv.y * 2.0 - 1.0, depth * 2.0 - 1.0, 1.0);
+	vec4 proj_worldpos = u_ivp * screen_pos;
+	vec3 world_position = proj_worldpos.xyz / proj_worldpos.w;
+
+	vec4 inFocus = texture(u_texture, uv);
+	vec4 outOfFocus = texture(u_outOfFocus_texture, uv);
+
+	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(length(world_position.xy - uv) ));
+
+
+	FragColor = mix(inFocus, outOfFocus, blur);
 }
