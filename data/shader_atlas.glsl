@@ -1554,7 +1554,7 @@ void main()
 	vec4 inFocus = texture(u_texture, uv);
 	vec4 outOfFocus = texture(u_outOfFocus_texture, uv);
 
-	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(world_position.x));
+	float blur = smoothstep( u_distance_data.x, u_distance_data.y, abs(length(world_position.xy - uv) ));
 
 
 	FragColor = mix(inFocus, outOfFocus, blur);
