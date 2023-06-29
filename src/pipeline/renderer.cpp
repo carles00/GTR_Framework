@@ -14,16 +14,17 @@
 #include "../utils/utils.h"
 #include "../extra/hdre.h"
 #include "../core/ui.h"
+#include <filesystem>
 
 #include "scene.h"
 
-
 using namespace SCN;
 
-//some globals
+// some globals
 GFX::Mesh sphere;
+GFX::Mesh cube;
 
-Renderer::Renderer(const char* shader_atlas_filename)
+Renderer::Renderer(const char *shader_atlas_filename)
 {
 	render_wireframe = false;
 	render_boundaries = false;
@@ -42,6 +43,7 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	show_probes = false;
 	update_probes = false;
 	irradiance = false;
+	show_reflection_probe = false;
 	buffers_to_show[0] = 0;
 	buffers_to_show[1] = 1;
 	buffers_to_show[2] = 2;
@@ -54,9 +56,18 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	shadow_atlas_fbo = nullptr;
 	irr_fbo = nullptr;
 	probes_texture = nullptr;
+	volumetric_fbo = nullptr;
+	enable_volumetric = false;
+	show_volumetric = false;
+	clone_depth_buffer = nullptr;
+	reflection_fbo = nullptr;
+
+	air_density = 0.001;
+	brightness_fx = 1.0f;
+	blur_intensity = 1.0f;
 
 	render_order = std::vector<RenderCall>();
-	lights = std::vector<LightEntity*>();
+	lights = std::vector<LightEntity *>();
 	shadow_atlas_width = 4096;
 	shadow_atlas_height = 2048;
 	shadowmap_width = shadow_atlas_width / 4;
@@ -65,6 +76,24 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	shadow_atlas_fbo = new GFX::FBO();
 	shadow_atlas_fbo->setDepthOnly(shadow_atlas_width, shadow_atlas_height);
 	shadow_atlas = shadow_atlas_fbo->depth_texture;
+	postfxIN_fbo = nullptr;
+	postfxOUT_fbo = nullptr;
+	postfxTEMP_fbo = nullptr;
+	Matrix44 prev_viewprojection_matrix = Matrix44::IDENTITY;
+
+	enable_color_correction = false;
+	motion_blur = false;
+	blur = false;
+	enable_bloom = true;
+
+	current_LUT = 0;
+	LUTamount = 0.5f;
+	LUT = false;
+
+	DoF = false;
+	min_dof_distance = 1.0f;
+	max_dof_distance = 3.0f;
+
 	if (!GFX::Shader::LoadAtlas(shader_atlas_filename))
 		exit(1);
 
@@ -79,42 +108,45 @@ Renderer::Renderer(const char* shader_atlas_filename)
 	sphere.createSphere(1.0f);
 	sphere.uploadToVRAM();
 
+	cube.createCube(1.0f);
+	cube.uploadToVRAM();
+
 	random_points = generateSpherePoints(64, 1.0, false);
 	ssao_radius = 1.0;
 
 	irradiance_cache_info.num_probes = 0;
 
+	probe.pos.set(50, 50, 50);
 }
 
-
-void SCN::Renderer::captureIrradiance()
+void Renderer::captureIrradiance()
 {
 	update_probes = false;
-	//when computing the probes position…
+	// when computing the probes positionï¿½
 
-	//define the corners of the axis aligned grid
-	//this can be done using the boundings of our scene
+	// define the corners of the axis aligned grid
+	// this can be done using the boundings of our scene
 	vec3 start_pos(-300, 5, -400);
 	vec3 end_pos(300, 150, 400);
 
-	//define how many probes you want per dimension
+	// define how many probes you want per dimension
 	vec3 dim(10, 4, 10);
 
-	//compute the vector from one corner to the other
+	// compute the vector from one corner to the other
 	vec3 delta = (end_pos - start_pos);
 
-	//and scale it down according to the subdivisions
-	//we substract one to be sure the last probe is at end pos
+	// and scale it down according to the subdivisions
+	// we substract one to be sure the last probe is at end pos
 	delta.x /= (dim.x - 1);
 	delta.y /= (dim.y - 1);
 	delta.z /= (dim.z - 1);
-	//now delta give us the distance between probes in every axis
+	// now delta give us the distance between probes in every axis
 
 	probes.resize(dim.x * dim.y * dim.z);
-	//lets compute the centers
-	//pay attention at the order at which we add them
+	// lets compute the centers
+	// pay attention at the order at which we add them
 	for (int z = 0; z < dim.z; z++)
-	{	
+	{
 		for (int y = 0; y < dim.y; y++)
 		{
 			for (int x = 0; x < dim.x; x++)
@@ -122,24 +154,23 @@ void SCN::Renderer::captureIrradiance()
 				sProbe p;
 				p.local.set(x, y, z);
 
-				//index in the linear array
+				// index in the linear array
 				p.index = x + y * dim.x + z * dim.x * dim.y;
 
-				//and its position
+				// and its position
 				p.pos = start_pos + delta * vec3(x, y, z);
 				probes[p.index] = p;
-				//probes.push_back(p);
+				// probes.push_back(p);
 			}
 		}
-	}	
+	}
 	for (int iP = 0; iP < probes.size(); iP++)
 	{
-		sProbe& probe = probes[iP];
+		sProbe &probe = probes[iP];
 		captureProbe(probe);
 	}
-	
 
-	FILE* f = fopen("irradiance_cache.bin", "wb");
+	FILE *f = fopen("irradiance_cache.bin", "wb");
 	if (f == NULL)
 		return;
 
@@ -149,15 +180,15 @@ void SCN::Renderer::captureIrradiance()
 	irradiance_cache_info.num_probes = probes.size();
 
 	fwrite(&irradiance_cache_info, sizeof(irradiance_cache_info), 1, f);
-	fwrite( &probes[0], sizeof(sProbe), irradiance_cache_info.num_probes, f);
+	fwrite(&probes[0], sizeof(sProbe), irradiance_cache_info.num_probes, f);
 	fclose(f);
 
 	uploadIrradianceCache();
 }
 
-void SCN::Renderer::loadIrradianceCache()
+void Renderer::loadIrradianceCache()
 {
-	FILE* f = fopen("irradiance_cache.bin", "rb");
+	FILE *f = fopen("irradiance_cache.bin", "rb");
 	if (f == NULL)
 		return;
 
@@ -169,107 +200,118 @@ void SCN::Renderer::loadIrradianceCache()
 	uploadIrradianceCache();
 }
 
-void SCN::Renderer::uploadIrradianceCache()
+void Renderer::uploadIrradianceCache()
 {
 	if (probes_texture)
 		delete probes_texture;
 
 	vec3 dim = irradiance_cache_info.dims;
 
-	//create the texture to store the probes (do this ONCE!!!)
+	// create the texture to store the probes (do this ONCE!!!)
 	probes_texture = new GFX::Texture(
-		9, //9 coefficients per probe
-		probes.size(), //as many rows as probes
-		GL_RGB, //3 channels per coefficient
-		GL_FLOAT); //they require a high range
+		9,			   // 9 coefficients per probe
+		probes.size(), // as many rows as probes
+		GL_RGB,		   // 3 channels per coefficient
+		GL_FLOAT);	   // they require a high range
 
-	//we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
-	SphericalHarmonics* sh_data = NULL;
+	// we must create the color information for the texture. because every SH are 27 floats in the RGB,RGB,... order, we can create an array of SphericalHarmonics and use it as pixels of the texture
+	SphericalHarmonics *sh_data = NULL;
 	sh_data = new SphericalHarmonics[dim.x * dim.y * dim.z];
 
-	//here we fill the data of the array with our probes in x,y,z order
+	// here we fill the data of the array with our probes in x,y,z order
 	for (int i = 0; i < probes.size(); ++i)
 		sh_data[i] = probes[i].sh;
 
-	//now upload the data to the GPU as a texture
-	probes_texture->upload(GL_RGB, GL_FLOAT, false, (uint8*)sh_data);
+	// now upload the data to the GPU as a texture
+	probes_texture->upload(GL_RGB, GL_FLOAT, false, (uint8 *)sh_data);
 
-	//disable any texture filtering when reading
+	// disable any texture filtering when reading
 	probes_texture->bind();
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 	glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
 
-	//always free memory after allocating it!!!
+	// always free memory after allocating it!!!
 	delete[] sh_data;
-
-
 }
 
-//Sets up the light and render_order vectors, renders the shadowmaps
-void Renderer::setupScene(Camera* camera)
+// Sets up the light and render_order vectors, renders the shadowmaps
+void Renderer::setupScene(Camera *camera)
 {
+	// clear render_order after all rendering is finished
+	render_order.clear();
+	render_order_alpha.clear();
+
 	if (scene->skybox_filename.size())
 		skybox_cubemap = GFX::Texture::Get(std::string(scene->base_folder + "/" + scene->skybox_filename).c_str());
 	else
 		skybox_cubemap = nullptr;
-	
-	//clear lights vector
-	lights.clear();
 
-	//parse all scene nodes and asign them to rendercall or litghts
+	// clear lights vector
+	lights.clear();
+	decals.clear();
+
+	// parse all scene nodes and asign them to rendercall or litghts
 	for (int i = 0; i < scene->entities.size(); ++i)
 	{
-		BaseEntity* ent = scene->entities[i];
+		BaseEntity *ent = scene->entities[i];
 		if (!ent->visible)
 			continue;
 
-		if (ent->getType() == SCN::eEntityType::PREFAB) {
-			PrefabEntity* pent = (SCN::PrefabEntity*)ent;
+		if (ent->getType() == SCN::eEntityType::PREFAB)
+		{
+			PrefabEntity *pent = (SCN::PrefabEntity *)ent;
 			if (pent->prefab)
-				//if it is a prefab create the renderCalls
+				// if it is a prefab create the renderCalls
 				walkEntities(&pent->root, camera);
-
-		}else if (ent->getType() == SCN::eEntityType::LIGHT){
-			lights.push_back((SCN::LightEntity*)ent);
+		}
+		else if (ent->getType() == SCN::eEntityType::LIGHT)
+		{
+			lights.push_back((SCN::LightEntity *)ent);
+		}
+		else if (ent->getType() == SCN::DECAL)
+		{
+			decals.push_back((SCN::DecalEntity *)ent);
 		}
 	}
 
-	//order render_order for priority rendering
-	std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort); //front to back
-	std::sort(render_order_alpha.begin(), render_order_alpha.end(), RenderCall::render_call_alpha_sort); //back to front
+	// order render_order for priority rendering
+	std::sort(render_order.begin(), render_order.end(), RenderCall::render_call_sort);					 // front to back
+	std::sort(render_order_alpha.begin(), render_order_alpha.end(), RenderCall::render_call_alpha_sort); // back to front
 
-	if(enable_shadows)
+	if (enable_shadows)
 		generateShadowmaps();
 }
 
-//Walks over every prefab on the scene and creates the render calls
-void Renderer::walkEntities(SCN::Node* node, Camera* camera) {
+// Walks over every prefab on the scene and creates the render calls
+void Renderer::walkEntities(SCN::Node *node, Camera *camera)
+{
 	if (!node->visible)
 		return;
 
-	//compute global matrix
+	// compute global matrix
 	Matrix44 node_model = node->getGlobalMatrix(true);
-	//does this node have a mesh? then we must render it
+	// does this node have a mesh? then we must render it
 	if (node->mesh && node->material)
 	{
-		//compute the bounding box of the object in world space (by using the mesh bounding box transformed to world space)
+		// compute the bounding box of the object in world space (by using the mesh bounding box transformed to world space)
 		BoundingBox world_bounding = transformBoundingBox(node_model, node->mesh->box);
 
-		//if bounding box is inside the camera frustum then the object is probably visible
+		// if bounding box is inside the camera frustum then the object is probably visible
 		if (camera->testBoxInFrustum(world_bounding.center, world_bounding.halfsize))
 		{
-			//create the render calls
+			// create the render calls
 			createRenderCall(node_model, node->mesh, node->material, camera->eye);
 		}
 	}
 
-	//iterate recursively with children
+	// iterate recursively with children
 	for (int i = 0; i < node->children.size(); ++i)
 		walkEntities(node->children[i], camera);
 }
 
-//Creates a render call for a given entity and stores it on the render_order vector
-void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Material* material, vec3 camera_pos) {
+// Creates a render call for a given entity and stores it on the render_order vector
+void Renderer::createRenderCall(Matrix44 model, GFX::Mesh *mesh, SCN::Material *material, vec3 camera_pos)
+{
 	RenderCall rc;
 	Vector3f nodepos = model.getTranslation();
 	rc.model = model;
@@ -282,8 +324,9 @@ void SCN::Renderer::createRenderCall(Matrix44 model, GFX::Mesh* mesh, SCN::Mater
 		render_order_alpha.push_back(rc);
 }
 
-//Generates shadowmaps for each light that casts a shadow, renders to shadow_atlas_fbo
-void Renderer::generateShadowmaps() {
+// Generates shadowmaps for each light that casts a shadow, renders to shadow_atlas_fbo
+void Renderer::generateShadowmaps()
+{
 	GFX::startGPULabel("Shadowmaps");
 	eRenderMode previous_mode = render_mode;
 	render_mode = FLAT;
@@ -291,10 +334,11 @@ void Renderer::generateShadowmaps() {
 
 	int j = 0;
 	int i = 0;
-	for(auto light : lights)
+	for (auto light : lights)
 	{
-		//4 columns 2 rows
-		if (i > 3) {
+		// 4 columns 2 rows
+		if (i > 3)
+		{
 			j++;
 			i = 0;
 		}
@@ -305,29 +349,29 @@ void Renderer::generateShadowmaps() {
 		if (light->light_type != eLightType::SPOT && light->light_type != eLightType::DIRECTIONAL)
 			continue;
 
-
 		vec3 pos = light->root.model.getTranslation();
 		vec3 front = light->root.model.rotateVector(vec3(0, 0, -1));
 		vec3 up = vec3(0, 1, 0);
 		camera.lookAt(pos, pos + front, up);
 
-		if (light->light_type == eLightType::SPOT) {
+		if (light->light_type == eLightType::SPOT)
+		{
 			camera.setPerspective(light->cone_info.y * 2, 1, light->near_distance, light->max_distance);
 		}
 
-		if (light->light_type == eLightType::DIRECTIONAL) {
+		if (light->light_type == eLightType::DIRECTIONAL)
+		{
 			float halfarea = light->area / 2;
 			camera.setOrthographic(-halfarea, halfarea, halfarea * 1, -halfarea * 1, 0.1, light->max_distance);
 		}
-		
-		//TODO check if light inside camera
+
+		// TODO check if light inside camera
 
 		vec4 region = vec4(
-			(shadowmap_width*i)/ shadow_atlas_width,
-			(shadowmap_height*j)/ shadow_atlas_height,
-			shadowmap_width / shadow_atlas_width, 
-			shadowmap_height / shadow_atlas_height
-		);
+			(shadowmap_width * i) / shadow_atlas_width,
+			(shadowmap_height * j) / shadow_atlas_height,
+			shadowmap_width / shadow_atlas_width,
+			shadowmap_height / shadow_atlas_height);
 		light->shadowmap_region = region;
 
 		shadow_atlas_fbo->bind();
@@ -337,7 +381,7 @@ void Renderer::generateShadowmaps() {
 		glEnable(GL_SCISSOR_TEST);
 
 		renderFrame(&camera);
-		
+
 		glDisable(GL_SCISSOR_TEST);
 		shadow_atlas_fbo->unbind();
 
@@ -348,29 +392,31 @@ void Renderer::generateShadowmaps() {
 	GFX::endGPULabel();
 }
 
-//Render scene pipeline
-void Renderer::renderScene(SCN::Scene* scene, Camera* camera)
+// Render scene pipeline
+void Renderer::renderScene(SCN::Scene *scene, Camera *camera)
 {
 	this->scene = scene;
-	
+
 	setupScene(camera);
 
-	//render entities
+	// render entities
 	renderFrame(camera);
+
+	if (show_reflection_probe)
+	{
+		glEnable(GL_DEPTH_TEST);
+		renderReflectionProbe(probe);
+		glDisable(GL_DEPTH_TEST);
+	}
 
 	if (update_probes)
 		captureIrradiance();
 
-	//clear render_order after all rendering is finished
-	render_order.clear();
-	render_order_alpha.clear();
-
 	if (show_shadowmaps)
 		showShadowmaps();
-
 }
 
-void Renderer::renderFrame(Camera* camera)
+void Renderer::renderFrame(Camera *camera)
 {
 	if (render_mode == eRenderMode::DEFERRED)
 		renderDeferred(camera);
@@ -378,39 +424,37 @@ void Renderer::renderFrame(Camera* camera)
 		renderForward(camera);
 }
 
-
-
-//Calls renderMesh for each rendercall stored in render_order
-void SCN::Renderer::renderForward(Camera* camera) {
-	
+// Calls renderMesh for each rendercall stored in render_order
+void Renderer::renderForward(Camera *camera)
+{
 
 	glDisable(GL_BLEND);
 	glEnable(GL_DEPTH_TEST);
-	//set the camera as default (used by some functions in the framework)
+	// set the camera as default (used by some functions in the framework)
 	camera->enable();
 
-	//set the clear color (the background color)
+	// set the clear color (the background color)
 	glClearColor(scene->background_color.x, scene->background_color.y, scene->background_color.z, 1.0);
 
 	// Clear the color and the depth buffer
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 	GFX::checkGLErrors();
 
-	//render skybox
+	// render skybox
 	if (skybox_cubemap && render_mode != eRenderMode::FLAT)
 		renderSkybox(skybox_cubemap);
 
-	
-	
-	//call renderMeshWithMaterial depending on rendermode
+	// call renderMeshWithMaterial depending on rendermode
 	renderSceneNodes(camera);
 
 	renderAlphaObjects(camera);
 }
 
-void Renderer::renderSceneNodes(Camera* camera) {
+void Renderer::renderSceneNodes(Camera *camera)
+{
 
-	for (int i = 0; i < render_order.size(); i++) {
+	for (int i = 0; i < render_order.size(); i++)
+	{
 		switch (render_mode)
 		{
 		case FLAT:
@@ -432,10 +476,9 @@ void Renderer::renderSceneNodes(Camera* camera) {
 	}
 }
 
-
-void Renderer::renderSkybox(GFX::Texture* cubemap)
+void Renderer::renderSkybox(GFX::Texture *cubemap)
 {
-	Camera* camera = Camera::current;
+	Camera *camera = Camera::current;
 
 	glDisable(GL_BLEND);
 	glDisable(GL_DEPTH_TEST);
@@ -443,7 +486,7 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-	GFX::Shader* shader = GFX::Shader::Get("skybox");
+	GFX::Shader *shader = GFX::Shader::Get("skybox");
 	if (!shader)
 		return;
 	shader->enable();
@@ -460,26 +503,203 @@ void Renderer::renderSkybox(GFX::Texture* cubemap)
 	glEnable(GL_DEPTH_TEST);
 }
 
-
-
-//renders a mesh given its transform and material
-void Renderer::renderMeshWithMaterial(RenderCall* rc, Camera* camera)
+void Renderer::applyBlur(float width, float height, GFX::Texture *color_buffer, GFX::FBO *INfbo, GFX::FBO *OUTfbo)
 {
-	//in case there is nothing to do
-	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material )
+	GFX::Shader *fx_blur_shader = GFX::Shader::Get("fx_blur");
+	fx_blur_shader->enable();
+	fx_blur_shader->setUniform("u_intensity", blur_intensity);
+
+	int power = 1;
+	for (size_t i = 0; i < 4; i++)
+	{
+		fx_blur_shader->setUniform("u_offset", vec2((float)power / width, 0.0f));
+		fx_blur_shader->setUniform("u_texture", INfbo->color_textures[0], 0);
+		OUTfbo->bind();
+		{
+			GFX::Mesh::getQuad()->render(GL_TRIANGLES);
+		}
+		OUTfbo->unbind();
+		std::swap(OUTfbo, INfbo);
+
+		fx_blur_shader->enable();
+		fx_blur_shader->setUniform("u_offset", vec2(0.0f, (float)power / height));
+		fx_blur_shader->setUniform("u_texture", INfbo->color_textures[0], 0);
+		OUTfbo->bind();
+		{
+			GFX::Mesh::getQuad()->render(GL_TRIANGLES);
+		}
+		OUTfbo->unbind();
+		std::swap(INfbo, OUTfbo);
+
+		power = power << 1;
+	}
+
+	postfxIN_fbo->bind();
+	{
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+		if (postfxTEMP_fbo)
+			postfxTEMP_fbo->color_textures[0]->toViewport();
+		else
+			color_buffer->toViewport();
+	}
+	postfxIN_fbo->unbind();
+
+	glDisable(GL_BLEND);
+}
+
+GFX::Texture *selectLUTTexture(int selected)
+{
+	std::string LUT_path = "data/textures/LUT/";
+	switch (selected)
+	{
+	case 0:
+		LUT_path = LUT_path + "brdfLUT.png";
+		break;
+	case 1:
+		LUT_path = LUT_path + "neutral-color.png";
+		break;
+	case 2:
+		LUT_path = LUT_path + "inverted-neutral-color.png";
+		break;
+	}
+	return GFX::Texture::Get(LUT_path.c_str());
+}
+
+void SCN::Renderer::renderPostFX(GFX::Texture *color_buffer, GFX::Texture *depth_buffer, Camera *camera)
+{
+	float width = color_buffer->width;
+	float height = color_buffer->height;
+
+	if (!postfxIN_fbo)
+	{
+		postfxIN_fbo = new GFX::FBO();
+		postfxOUT_fbo = new GFX::FBO();
+		postfxTEMP_fbo = new GFX::FBO();
+		postfxIN_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+		postfxOUT_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+		postfxTEMP_fbo->create(width, height, 1, GL_RGB, GL_HALF_FLOAT);
+	}
+
+	postfxIN_fbo->bind();
+	{
+		color_buffer->toViewport();
+	}
+	postfxIN_fbo->unbind();
+	postfxTEMP_fbo->bind();
+	{
+		color_buffer->toViewport();
+	}
+	postfxTEMP_fbo->unbind();
+	if (enable_color_correction)
+	{
+
+		GFX::Shader *fx_color_shader = GFX::Shader::Get("fx_color");
+		postfxOUT_fbo->bind();
+		{
+			// color correction
+			fx_color_shader->enable();
+			fx_color_shader->setUniform("u_brightness", brightness_fx);
+			color_buffer->toViewport(fx_color_shader);
+		}
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+		// save image
+		postfxTEMP_fbo->bind();
+		{
+			postfxIN_fbo->color_textures[0]->toViewport(fx_color_shader);
+		}
+		postfxTEMP_fbo->unbind();
+	}
+
+	// motion blur
+	GFX::Shader *fx_motion_blur_shader = GFX::Shader::Get("fx_motion_blur");
+	fx_motion_blur_shader->enable();
+	fx_motion_blur_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+	fx_motion_blur_shader->setUniform("u_prev_vp", prev_viewprojection_matrix);
+	fx_motion_blur_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->width, 1.0 / gbuffers_fbo->height));
+	fx_motion_blur_shader->setUniform("u_depth_texture", depth_buffer, 4);
+	postfxOUT_fbo->bind();
+	{
+		postfxIN_fbo->color_textures[0]->toViewport(fx_motion_blur_shader);
+	}
+	postfxOUT_fbo->unbind();
+	prev_viewprojection_matrix = camera->viewprojection_matrix;
+	std::swap(postfxIN_fbo, postfxOUT_fbo);
+
+	// blur
+	if (blur)
+	{
+		applyBlur(width, height, color_buffer, postfxIN_fbo, postfxOUT_fbo);
+	}
+
+	// LUT
+	if (LUT)
+	{
+		GFX::Texture *LUT_texture = selectLUTTexture(current_LUT);
+		GFX::Shader *LUT_shader = GFX::Shader::Get("fx_lut");
+
+		LUT_shader->enable();
+		postfxOUT_fbo->bind();
+		LUT_shader->setUniform("u_textureB", LUT_texture, 1);
+		LUT_shader->setUniform("u_amount", LUTamount);
+		postfxIN_fbo->color_textures[0]->toViewport(LUT_shader);
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+	}
+
+	// DoF
+
+	if (DoF)
+	{
+
+		applyBlur(width, height, postfxIN_fbo->color_textures[0], postfxTEMP_fbo, postfxOUT_fbo);
+
+		GFX::Shader *dofShader = GFX::Shader::Get("fx_dof");
+		dofShader->enable();
+		postfxOUT_fbo->bind();
+		dofShader->setUniform("u_distance_data", vec2(min_dof_distance, max_dof_distance));
+		dofShader->setTexture("u_outOfFocus_texture", postfxTEMP_fbo->color_textures[0], 2);
+		dofShader->setUniform("u_depth_texture", depth_buffer, 4);
+		dofShader->setUniform("u_camera_eye", camera->center);
+		dofShader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+		dofShader->setUniform("u_iRes", vec2(1.0 / width, 1.0 / height));
+		postfxIN_fbo->color_textures[0]->toViewport(dofShader);
+		postfxOUT_fbo->unbind();
+
+		std::swap(postfxIN_fbo, postfxOUT_fbo);
+	}
+
+	// final tonemapper
+	GFX::Shader *illumination_shader = GFX::Shader::Get("tonemapper");
+	illumination_shader->enable();
+	illumination_shader->setUniform("u_scale", tonemapper_scale);
+	illumination_shader->setUniform("u_average_lum", average_lum);
+	illumination_shader->setUniform("u_lumwhite2", lumwhite2);
+	illumination_shader->setUniform("u_igamma", 1.0f / gamma);
+	postfxIN_fbo->color_textures[0]->toViewport(illumination_shader);
+}
+
+// renders a mesh given its transform and material
+void Renderer::renderMeshWithMaterial(RenderCall *rc, Camera *camera)
+{
+	// in case there is nothing to do
+	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
 		return;
-    assert(glGetError() == GL_NO_ERROR);
+	assert(glGetError() == GL_NO_ERROR);
 
 	if (render_boundaries)
 		rc->mesh->renderBounding(rc->model, true);
 
-	//define locals to simplify coding
-	GFX::Shader* shader = NULL;
-	GFX::Texture* white = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
-	
-	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
+	// define locals to simplify coding
+	GFX::Shader *shader = NULL;
+	GFX::Texture *white = GFX::Texture::getWhiteTexture(); // a 1x1 white texture
 
-	//select the blending
+	GFX::Texture *albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
+
+	// select the blending
 	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
 	{
 		glEnable(GL_BLEND);
@@ -488,193 +708,196 @@ void Renderer::renderMeshWithMaterial(RenderCall* rc, Camera* camera)
 	else
 		glDisable(GL_BLEND);
 
-	//select if render both sides of the triangles
-	if(rc->material->two_sided)
+	// select if render both sides of the triangles
+	if (rc->material->two_sided)
 		glDisable(GL_CULL_FACE);
 	else
 		glEnable(GL_CULL_FACE);
-    assert(glGetError() == GL_NO_ERROR);
+	assert(glGetError() == GL_NO_ERROR);
 
 	glEnable(GL_DEPTH_TEST);
 
-	//chose a shader
+	// chose a shader
 	shader = GFX::Shader::Get("texture");
 
-    assert(glGetError() == GL_NO_ERROR);
+	assert(glGetError() == GL_NO_ERROR);
 
-	//no shader? then nothing to render
+	// no shader? then nothing to render
 	if (!shader)
 		return;
 	shader->enable();
 
-	//upload uniforms
-	shader->setUniform("u_model", rc->model);
-	cameraToShader(camera, shader);
-	float t = getTime();
-	shader->setUniform("u_time", t );
-
-	shader->setUniform("u_color", rc->material->color);
-	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
-
-	//this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
-	shader->setUniform("u_alpha_cutoff", rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f);
-
-	if (render_wireframe)
-		glPolygonMode( GL_FRONT_AND_BACK, GL_LINE );
-
-	//do the draw call that renders the mesh into the screen
-	rc->mesh->render(GL_TRIANGLES);
-
-	//disable shader
-	shader->disable();
-
-	//set the render state as it was before to avoid problems with future renders
-	glDisable(GL_BLEND);
-	glPolygonMode( GL_FRONT_AND_BACK, GL_FILL );
-}
-
-//renders Mesh with flat shader
-void Renderer::renderMeshWithMaterialFlat(RenderCall* rc, Camera* camera)
-{
-	//in case there is nothing to do
-	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
-		return;
-	assert(glGetError() == GL_NO_ERROR);
-
-	if (render_boundaries)
-		rc->mesh->renderBounding(rc->model, true);
-
-	//define locals to simplify coding
-	GFX::Shader* shader = NULL;
-
-	//select the blending
-	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
-		return;
-	glDisable(GL_BLEND);
-
-	//select if render both sides of the triangles
-	if (rc->material->two_sided)
-		glDisable(GL_CULL_FACE);
-	else
-		glEnable(GL_CULL_FACE);
-	assert(glGetError() == GL_NO_ERROR);
-
-	glEnable(GL_DEPTH_TEST);
-
-	//chose a shader
-	shader = GFX::Shader::Get("flat");
-
-	assert(glGetError() == GL_NO_ERROR);
-
-	//no shader? then nothing to render
-	if (!shader)
-		return;
-	shader->enable();
-
-	//upload uniforms
-	shader->setUniform("u_model", rc->model);
-	cameraToShader(camera, shader);
-
-	//do the draw call that renders the mesh into the screen
-	rc->mesh->render(GL_TRIANGLES);
-
-	//disable shader
-	shader->disable();
-}
-
-//Render mesh with lights: singlepass and multipas
-void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
-{
-	//in case there is nothing to do
-	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
-		return;
-	assert(glGetError() == GL_NO_ERROR);
-
-	if (render_boundaries)
-		rc->mesh->renderBounding(rc->model, true);
-
-	//define locals to simplify coding
-	GFX::Shader* shader = NULL;
-	GFX::Texture* white = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
-
-	//get textures from material
-	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
-	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
-	GFX::Texture* metalic_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
-	GFX::Texture* normal_map = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
-
-	//select the blending
-	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
-	{
-		glEnable(GL_BLEND);
-		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-	}
-	else
-		glDisable(GL_BLEND);
-
-	//select if render both sides of the triangles
-	if (rc->material->two_sided)
-		glDisable(GL_CULL_FACE);
-	else
-		glEnable(GL_CULL_FACE);
-	assert(glGetError() == GL_NO_ERROR);
-
-	glEnable(GL_DEPTH_TEST);
-
-	//chose a shader
-	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED) {
-		shader = GFX::Shader::Get("light_multipass");
-	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS ) {//deferred for when we call from renderDeferred
-		shader = GFX::Shader::Get("light_singlepass");
-	}
-	
-
-	assert(glGetError() == GL_NO_ERROR);
-
-	//no shader? then nothing to render
-	if (!shader)
-		return;
-	shader->enable();
-
-	//upload uniforms
+	// upload uniforms
 	shader->setUniform("u_model", rc->model);
 	cameraToShader(camera, shader);
 	float t = getTime();
 	shader->setUniform("u_time", t);
-	//pass all textures and color to shader
+
+	shader->setUniform("u_color", rc->material->color);
+	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
+
+	// this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
+	shader->setUniform("u_alpha_cutoff", rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f);
+
+	if (render_wireframe)
+		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+
+	// do the draw call that renders the mesh into the screen
+	rc->mesh->render(GL_TRIANGLES);
+
+	// disable shader
+	shader->disable();
+
+	// set the render state as it was before to avoid problems with future renders
+	glDisable(GL_BLEND);
+	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+}
+
+// renders Mesh with flat shader
+void Renderer::renderMeshWithMaterialFlat(RenderCall *rc, Camera *camera)
+{
+	// in case there is nothing to do
+	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
+		return;
+	assert(glGetError() == GL_NO_ERROR);
+
+	if (render_boundaries)
+		rc->mesh->renderBounding(rc->model, true);
+
+	// define locals to simplify coding
+	GFX::Shader *shader = NULL;
+
+	// select the blending
+	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
+		return;
+	glDisable(GL_BLEND);
+
+	// select if render both sides of the triangles
+	if (rc->material->two_sided)
+		glDisable(GL_CULL_FACE);
+	else
+		glEnable(GL_CULL_FACE);
+	assert(glGetError() == GL_NO_ERROR);
+
+	glEnable(GL_DEPTH_TEST);
+
+	// chose a shader
+	shader = GFX::Shader::Get("flat");
+
+	assert(glGetError() == GL_NO_ERROR);
+
+	// no shader? then nothing to render
+	if (!shader)
+		return;
+	shader->enable();
+
+	// upload uniforms
+	shader->setUniform("u_model", rc->model);
+	cameraToShader(camera, shader);
+
+	// do the draw call that renders the mesh into the screen
+	rc->mesh->render(GL_TRIANGLES);
+
+	// disable shader
+	shader->disable();
+}
+
+// Render mesh with lights: singlepass and multipas
+void Renderer::renderMeshWithMaterialLight(RenderCall *rc, Camera *camera)
+{
+	// in case there is nothing to do
+	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
+		return;
+	assert(glGetError() == GL_NO_ERROR);
+
+	if (render_boundaries)
+		rc->mesh->renderBounding(rc->model, true);
+
+	// define locals to simplify coding
+	GFX::Shader *shader = NULL;
+	GFX::Texture *white = GFX::Texture::getWhiteTexture(); // a 1x1 white texture
+
+	// get textures from material
+	GFX::Texture *albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
+	GFX::Texture *emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
+	GFX::Texture *metalic_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
+	GFX::Texture *normal_map = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
+
+	// select the blending
+	if (rc->material->alpha_mode == SCN::eAlphaMode::BLEND)
+	{
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	}
+	else
+		glDisable(GL_BLEND);
+
+	// select if render both sides of the triangles
+	if (rc->material->two_sided)
+		glDisable(GL_CULL_FACE);
+	else
+		glEnable(GL_CULL_FACE);
+	assert(glGetError() == GL_NO_ERROR);
+
+	glEnable(GL_DEPTH_TEST);
+
+	// chose a shader
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED)
+	{
+		shader = GFX::Shader::Get("light_multipass");
+	}
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS)
+	{ // deferred for when we call from renderDeferred
+		shader = GFX::Shader::Get("light_singlepass");
+	}
+
+	assert(glGetError() == GL_NO_ERROR);
+
+	// no shader? then nothing to render
+	if (!shader)
+		return;
+	shader->enable();
+
+	// upload uniforms
+	shader->setUniform("u_model", rc->model);
+	cameraToShader(camera, shader);
+	float t = getTime();
+	shader->setUniform("u_time", t);
+	// pass all textures and color to shader
 	shader->setUniform("u_color", rc->material->color);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_ambient", scene->ambient_light);
 
-	//this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
+	// this is used to say which is the alpha threshold to what we should not paint a pixel on the screen (to cut polygons according to texture alpha)
 	shader->setUniform("u_alpha_cutoff", rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f);
-	
-	//set texture flags
-	vec4 texture_flags = vec4(0,0,0,0); //normal, occlusion,specular | if 0 there is no texture 
+
+	// set texture flags
+	vec4 texture_flags = vec4(0, 0, 0, 0); // normal, occlusion,specular | if 0 there is no texture
 
 	//----normal map
-	if (normal_map && enable_normal_map) {
+	if (normal_map && enable_normal_map)
+	{
 		texture_flags.x = 1;
-		shader->setUniform("u_normal_map",normal_map,2);
+		shader->setUniform("u_normal_map", normal_map, 2);
 	}
 	//----occ & specular
-	if (metalic_texture && (enable_occ|| enable_specular || pbr_is_active)) {
+	if (metalic_texture && (enable_occ || enable_specular || pbr_is_active))
+	{
 		shader->setUniform("u_metalic_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
 		shader->setUniform("u_view_pos", camera->eye);
-		if(enable_occ)
+		if (enable_occ)
 			texture_flags.y = 1;
 
-		if (enable_specular) 
-			//disabled
+		if (enable_specular)
+			// disabled
 			texture_flags.z = 0;
-		
-		if (pbr_is_active) 
+
+		if (pbr_is_active)
 			texture_flags.w = 1;
 
-		shader->setUniform("u_occ_met_rough_texture", metalic_texture,3);
+		shader->setUniform("u_occ_met_rough_texture", metalic_texture, 3);
 	}
 
 	shader->setUniform("u_texture_flags", texture_flags);
@@ -682,34 +905,37 @@ void Renderer::renderMeshWithMaterialLight(RenderCall* rc, Camera* camera)
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-	//allow rendering at the same depth
+	// allow rendering at the same depth
 	glDepthFunc(GL_LEQUAL);
 
-	//select single or multipass
-	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED) {
+	// select single or multipass
+	if (render_mode == eRenderMode::LIGHTS_MULTIPASS || render_mode == eRenderMode::DEFERRED)
+	{
 		multiPass(rc, shader);
 	}
-	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS) { //deferred for when we call from renderDeferred
+	else if (render_mode == eRenderMode::LIGHTS_SINGLEPASS)
+	{ // deferred for when we call from renderDeferred
 		singlePass(rc, shader);
 	}
-	
 
 	glDepthFunc(GL_LESS);
 
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-	//disable shader
+	// disable shader
 	shader->disable();
 
-	//set the render state as it was before to avoid problems with future renders
+	// set the render state as it was before to avoid problems with future renders
 	glDisable(GL_BLEND);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-//Render function for multipass shader
-void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
-	// TODO BUG when there is no Directional light and no spotlight, everything that is not touched by a spot light does not rendered, but it should 
-	if (lights.size() == 0) {
+// Render function for multipass shader
+void Renderer::multiPass(RenderCall *rc, GFX::Shader *shader)
+{
+	// TODO BUG when there is no Directional light and no spotlight, everything that is not touched by a spot light does not rendered, but it should
+	if (lights.size() == 0)
+	{
 		shader->setUniform("u_light_info", vec4(int(eLightType::NO_LIGHT), 0, 0, 0));
 		rc->mesh->render(GL_TRIANGLES);
 		return;
@@ -717,11 +943,12 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 
 	for (int i = 0; i < lights.size(); i++)
 	{
-		//if distance from light is too big, continue
-		LightEntity* light = lights[i];
+		// if distance from light is too big, continue
+		LightEntity *light = lights[i];
 		eLightType type = light->light_type;
-		//only check spot and point because directional and ambient are global
-		if (type == eLightType::POINT || type == eLightType::SPOT) {
+		// only check spot and point because directional and ambient are global
+		if (type == eLightType::POINT || type == eLightType::SPOT)
+		{
 			BoundingBox world_bounding = transformBoundingBox(rc->model, rc->mesh->box);
 			if (cullLights(light, world_bounding))
 				continue;
@@ -729,7 +956,7 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 
 		lightToShader(light, shader);
 
-		//do the draw call that renders the mesh into the screen
+		// do the draw call that renders the mesh into the screen
 		rc->mesh->render(GL_TRIANGLES);
 
 		glEnable(GL_BLEND);
@@ -739,29 +966,32 @@ void Renderer::multiPass(RenderCall* rc, GFX::Shader* shader) {
 	}
 }
 
-//Render function for singlepass shader
-void Renderer::singlePass(RenderCall* rc, GFX::Shader* shader) {
-	if (lights.size() == 0) {
+// Render function for singlepass shader
+void Renderer::singlePass(RenderCall *rc, GFX::Shader *shader)
+{
+	if (lights.size() == 0)
+	{
 		shader->setUniform("u_num_lights", 0);
 		rc->mesh->render(GL_TRIANGLES);
 		return;
 	}
-	//lights
+	// lights
 	vec4 lights_info[MAX_LIGHTS];
 	vec3 lights_fronts[MAX_LIGHTS];
 	vec3 lights_positions[MAX_LIGHTS];
 	vec3 lights_colors[MAX_LIGHTS];
 	vec2 lights_cones[MAX_LIGHTS];
-	//shadows
+	// shadows
 	vec2 shadow_params[MAX_LIGHTS];
 	mat4 shadow_viewproj[MAX_LIGHTS];
 	vec4 shadowmap_region[MAX_LIGHTS];
 
 	for (int i = 0; i < MAX_LIGHTS; i++)
 	{
-		if (i < lights.size()) {
-			//lights
-			LightEntity* light = lights[i];
+		if (i < lights.size())
+		{
+			// lights
+			LightEntity *light = lights[i];
 			lights_info[i] = vec4((int)light->light_type, light->near_distance, light->max_distance, 0);
 			lights_fronts[i] = light->root.model.rotateVector(vec3(0, 0, 1));
 			lights_positions[i] = light->root.model.getTranslation();
@@ -770,39 +1000,40 @@ void Renderer::singlePass(RenderCall* rc, GFX::Shader* shader) {
 				lights_cones[i] = vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD));
 			else
 				lights_cones[i] = vec2(0, 0);
-			//shadows
+			// shadows
 			shadow_params[i] = vec2(light->cast_shadows && enable_shadows ? 1 : 0, light->shadow_bias);
-			if (light->cast_shadows && enable_shadows) {
+			if (light->cast_shadows && enable_shadows)
+			{
 				shadow_viewproj[i] = light->shadow_viewproj;
 				shadowmap_region[i] = light->shadowmap_region;
 			}
 		}
 	}
 	int size = lights.size();
-	//lights
-	shader->setUniform4Array("u_light_info", (float*)&lights_info, size);
-	shader->setUniform3Array("u_light_front", (float*)&lights_fronts, size);
-	shader->setUniform3Array("u_light_position", (float*)&lights_positions, size);
-	shader->setUniform3Array("u_light_color", (float*)&lights_colors, size);
-	shader->setUniform2Array("u_light_cone", (float*)&lights_cones, size);
+	// lights
+	shader->setUniform4Array("u_light_info", (float *)&lights_info, size);
+	shader->setUniform3Array("u_light_front", (float *)&lights_fronts, size);
+	shader->setUniform3Array("u_light_position", (float *)&lights_positions, size);
+	shader->setUniform3Array("u_light_color", (float *)&lights_colors, size);
+	shader->setUniform2Array("u_light_cone", (float *)&lights_cones, size);
 	shader->setUniform1("u_num_lights", size);
 
-	//shadows
-	shader->setUniform2Array("u_shadow_params", (float*)&shadow_params, size);
-	if (enable_shadows) {
-		shader->setUniform4Array("u_shadow_region", (float*)&shadowmap_region, size);
+	// shadows
+	shader->setUniform2Array("u_shadow_params", (float *)&shadow_params, size);
+	if (enable_shadows)
+	{
+		shader->setUniform4Array("u_shadow_region", (float *)&shadowmap_region, size);
 		shader->setMatrix44Array("u_shadow_viewproj", shadow_viewproj, size);
 		shader->setTexture("u_shadowmap", shadow_atlas, 8);
 	}
-	//do the draw call that renders the mesh into the screen
+	// do the draw call that renders the mesh into the screen
 
 	rc->mesh->render(GL_TRIANGLES);
 }
 
-
 void Renderer::renderGBuffers()
 {
-	Camera* camera = Camera::current;
+	Camera *camera = Camera::current;
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 	vec2 size = CORE::getWindowSize();
@@ -814,8 +1045,9 @@ void Renderer::renderGBuffers()
 		gbuffers_fbo->color_textures[buffers_to_show[0]]->toViewport();
 	else if (buffers_to_show[0] > 3)
 	{
-		GFX::Shader* texture_shader = nullptr;
-		switch (buffers_to_show[0]) {
+		GFX::Shader *texture_shader = nullptr;
+		switch (buffers_to_show[0])
+		{
 		case 4:
 			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
 			texture_shader->enable();
@@ -832,11 +1064,10 @@ void Renderer::renderGBuffers()
 			gbuffers_fbo->color_textures[3]->toViewport(texture_shader);
 			break;
 		}
-
 	}
 	else
 	{
-		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		GFX::Shader *deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 		deph_shader->enable();
 		gbuffers_fbo->depth_texture->toViewport(deph_shader);
 		deph_shader->disable();
@@ -846,8 +1077,9 @@ void Renderer::renderGBuffers()
 		gbuffers_fbo->color_textures[buffers_to_show[1]]->toViewport();
 	else if (buffers_to_show[1] > 3)
 	{
-		GFX::Shader* texture_shader = nullptr;
-		switch (buffers_to_show[1]) {
+		GFX::Shader *texture_shader = nullptr;
+		switch (buffers_to_show[1])
+		{
 		case 4:
 			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
 			texture_shader->enable();
@@ -868,7 +1100,7 @@ void Renderer::renderGBuffers()
 	}
 	else
 	{
-		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		GFX::Shader *deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 		deph_shader->enable();
 		gbuffers_fbo->depth_texture->toViewport(deph_shader);
 		deph_shader->disable();
@@ -878,8 +1110,9 @@ void Renderer::renderGBuffers()
 		gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
 	else if (buffers_to_show[2] > 3)
 	{
-		GFX::Shader* texture_shader = nullptr;
-		switch (buffers_to_show[2]) {
+		GFX::Shader *texture_shader = nullptr;
+		switch (buffers_to_show[2])
+		{
 		case 4:
 			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
 			texture_shader->enable();
@@ -900,21 +1133,22 @@ void Renderer::renderGBuffers()
 	}
 	else
 	{
-		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		GFX::Shader *deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 		deph_shader->enable();
 		gbuffers_fbo->depth_texture->toViewport(deph_shader);
 		deph_shader->disable();
 	}
 	glViewport(halfWidth, 0, halfWidth, halfHeight);
-	GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+	GFX::Shader *deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 	deph_shader->enable();
 	deph_shader->setUniform("u_camera_nearfar", vec2(camera->near_plane, camera->far_plane));
 	if (buffers_to_show[3] < 3)
 		gbuffers_fbo->color_textures[buffers_to_show[2]]->toViewport();
 	else if (buffers_to_show[3] > 3)
 	{
-		GFX::Shader* texture_shader = nullptr;
-		switch (buffers_to_show[3]) {
+		GFX::Shader *texture_shader = nullptr;
+		switch (buffers_to_show[3])
+		{
 		case 4:
 			texture_shader = GFX::Shader::getDefaultShader("screen_channel_r");
 			texture_shader->enable();
@@ -935,7 +1169,7 @@ void Renderer::renderGBuffers()
 	}
 	else
 	{
-		GFX::Shader* deph_shader = GFX::Shader::getDefaultShader("linear_depth");
+		GFX::Shader *deph_shader = GFX::Shader::getDefaultShader("linear_depth");
 		deph_shader->enable();
 		gbuffers_fbo->depth_texture->toViewport(deph_shader);
 		deph_shader->disable();
@@ -943,16 +1177,20 @@ void Renderer::renderGBuffers()
 	glViewport(0, 0, size.x, size.y);
 	deph_shader->disable();
 }
-void SCN::Renderer::renderDeferred(Camera* camera) {
+void Renderer::renderDeferred(Camera *camera)
+{
 
-	GFX::Mesh* quad = GFX::Mesh::getQuad();
+	GFX::Mesh *quad = GFX::Mesh::getQuad();
 
 	vec2 size = CORE::getWindowSize();
-	//generate the gbuffers
-	if (!gbuffers_fbo) {
+	// generate the gbuffers
+	if (!gbuffers_fbo)
+	{
 
 		gbuffers_fbo = new GFX::FBO();
 		gbuffers_fbo->create(size.x, size.y, 4, GL_RGBA, GL_UNSIGNED_BYTE, true);
+
+		clone_depth_buffer = new GFX::Texture(size.x, size.y, GL_DEPTH_COMPONENT, GL_UNSIGNED_INT);
 
 		illumination_fbo = new GFX::FBO();
 		illumination_fbo->create(size.x, size.y, 1, GL_RGBA, GL_HALF_FLOAT, false);
@@ -963,9 +1201,11 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		ssao_blur = new GFX::Texture();
 		ssao_blur->create(size.x, size.y);
 
+		volumetric_fbo = new GFX::FBO();
+		volumetric_fbo->create(size.x, size.y, 1, GL_RGBA, GL_UNSIGNED_BYTE, false);
 	}
 	gbuffers_fbo->bind();
-	//Rendering inside the gBuffer
+	// Rendering inside the gBuffer
 	{
 		/*gbuffers_fbo->enableBuffers(true, false, false, false);*/
 		gbuffers_fbo->enableAllBuffers();
@@ -975,6 +1215,47 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 	}
 	gbuffers_fbo->unbind();
 
+	// decals
+	if (decals.size())
+	{
+		gbuffers_fbo->depth_texture->copyTo(clone_depth_buffer);
+		glEnable(GL_DEPTH_TEST);
+		glDepthMask(false);
+		glColorMask(true, true, true, false);
+		glDepthFunc(GL_GREATER);
+		glEnable(GL_BLEND);
+		glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+		glEnable(GL_CULL_FACE);
+		glFrontFace(GL_CW);
+		gbuffers_fbo->bind();
+		{
+			camera->enable();
+			GFX::Shader *decal_shader = GFX::Shader::Get("decal");
+			decal_shader->enable();
+			cameraToShader(camera, decal_shader);
+			decal_shader->setTexture("u_depth_texture", clone_depth_buffer, 4);
+			decal_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			decal_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->color_textures[0]->width, 1.0 / gbuffers_fbo->color_textures[0]->height));
+			for (auto decal : decals)
+			{
+				if (!decal->filename.size())
+					continue;
+				decal_shader->setUniform("u_model", decal->root.model);
+				mat4 imodel = decal->root.model;
+				imodel.inverse();
+				decal_shader->setUniform("u_imodel", imodel);
+				GFX::Texture *decal_texture = decal->filename.size() == 0 ? GFX::Texture::getWhiteTexture() : GFX::Texture::Get(std::string("data/" + decal->filename).c_str());
+				decal_shader->setTexture("u_color_texture", decal_texture, 5);
+				cube.render(GL_TRIANGLES);
+			}
+		}
+		gbuffers_fbo->unbind();
+		glDepthMask(true);
+		glColorMask(true, true, true, true);
+		glDisable(GL_CULL_FACE);
+		glFrontFace(GL_CCW);
+		glDepthFunc(GL_LESS);
+	}
 
 	illumination_fbo->bind();
 	{
@@ -986,12 +1267,10 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		if (skybox_cubemap)
 			renderSkybox(skybox_cubemap);
-		//glDisable(GL_DEPTH_TEST);
+		// glDisable(GL_DEPTH_TEST);
 
-
-		GFX::Shader* quad_shader = GFX::Shader::Get("deferred_global");
+		GFX::Shader *quad_shader = GFX::Shader::Get("deferred_global");
 		quad_shader->enable();
-
 
 		quad_shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 		quad_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
@@ -1002,10 +1281,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		quad->render(GL_TRIANGLES);
 
-		
-
-		//lights
-		GFX::Shader* light_shader = GFX::Shader::Get("deferred_light");
+		// lights
+		GFX::Shader *light_shader = GFX::Shader::Get("deferred_light");
 		light_shader->enable();
 		gbuffersToShader(gbuffers_fbo, light_shader);
 
@@ -1023,7 +1300,8 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 		vec3 ambient = scene->ambient_light;
 		light_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
 		light_shader->setUniform("u_iRes", vec2(1.0 / size.x, 1.0 / size.y));
-		for (auto light : lights) {
+		for (auto light : lights)
+		{
 			if (light->light_type != DIRECTIONAL)
 				continue;
 			light_shader->setUniform("u_ambient_light", ambient);
@@ -1031,28 +1309,29 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			lightToShader(light, light_shader);
 			quad->render(GL_TRIANGLES);
 			ambient = vec3(0.0f);
-
 		}
 		glDisable(GL_BLEND);
 
-		//TODO: Create sphere for  every light
-		// such that renders only the parts INSIDE the mesh
+		// TODO: Create sphere for  every light
+		//  such that renders only the parts INSIDE the mesh
 
-		GFX::Shader* shader_spheres = GFX::Shader::Get("deferred_ws");
-		//GFX::Shader* shader_spheres = GFX::Shader::Get("flat");
+		GFX::Shader *shader_spheres = GFX::Shader::Get("deferred_ws");
+		// GFX::Shader* shader_spheres = GFX::Shader::Get("flat");
 		shader_spheres->enable();
 
 		gbuffersToShader(gbuffers_fbo, shader_spheres);
 
-		//glEnable(GL_DEPTH_TEST);
+		// glEnable(GL_DEPTH_TEST);
 		glDepthFunc(GL_GREATER);
 		glEnable(GL_BLEND);
 		glEnable(GL_CULL_FACE);
 		glFrontFace(GL_CW);
 		glBlendFunc(GL_ONE, GL_ONE);
 		glDepthMask(false);
-		for (auto light : lights) {
-			if (light->light_type == eLightType::POINT || light->light_type == eLightType::SPOT) {
+		for (auto light : lights)
+		{
+			if (light->light_type == eLightType::POINT || light->light_type == eLightType::SPOT)
+			{
 				Matrix44 model;
 				vec3 lightpos = light->root.model.getTranslation();
 				model.translate(lightpos.x, lightpos.y, lightpos.z);
@@ -1097,14 +1376,12 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 
 		illumination_fbo->unbind();
 
-		
-		
-		//ssao
+		// ssao
 		ssao_fbo->bind();
 		{
 			glDisable(GL_DEPTH_TEST);
 			glDisable(GL_BLEND);
-			GFX::Shader* ssao_shader = GFX::Shader::Get("ssao");
+			GFX::Shader *ssao_shader = GFX::Shader::Get("ssao");
 			ssao_shader->enable();
 			ssao_shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 0);
 			ssao_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 1);
@@ -1117,30 +1394,55 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			ssao_shader->setUniform("u_ssao_plus", ssao_plus ? 1.0f : 0.0f);
 
 			quad->render(GL_TRIANGLES);
-
 		}
 		ssao_fbo->unbind();
 
+		if (enable_volumetric)
+		{
+			volumetric_fbo->bind();
+			glDisable(GL_DEPTH_TEST);
+			glDisable(GL_BLEND);
+			GFX::Shader *volumetric_shader = GFX::Shader::Get("volumetric");
+			volumetric_shader->enable();
+			volumetric_shader->setTexture("u_depth_texture", gbuffers_fbo->depth_texture, 1);
+			volumetric_shader->setUniform("u_ivp", camera->inverse_viewprojection_matrix);
+			volumetric_shader->setUniform("u_iRes", vec2(1.0 / gbuffers_fbo->depth_texture->width, 1.0 / gbuffers_fbo->depth_texture->height));
+			volumetric_shader->setUniform("u_camera_position", camera->eye);
 
+			LightEntity *volumetric = nullptr;
+			for (auto light : lights)
+			{
+				if (light->light_type == DIRECTIONAL)
+					volumetric = light;
+			}
+			lightToShader(volumetric, volumetric_shader);
+			volumetric_shader->setUniform("u_air_density", air_density);
+			volumetric_shader->setUniform("u_ambient", scene->ambient_light);
+			volumetric_shader->setUniform("u_time", getTime() * 0.001f);
+			volumetric_shader->setUniform("u_random", random());
+
+			quad->render(GL_TRIANGLES);
+
+			volumetric_fbo->unbind();
+		}
 
 		glEnable(GL_DEPTH_TEST);
 
-		
+		if (enable_volumetric)
+		{
+			glDisable(GL_DEPTH_TEST);
+			glEnable(GL_BLEND);
+			glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+			volumetric_fbo->color_textures[0]->toViewport();
+			glDisable(GL_BLEND);
+		}
 
 		if (show_gbuffers)
 			renderGBuffers();
 		else
 		{
-			/*illumination_fbo->color_textures[0]->toViewport();*/
-			GFX::Shader* illumination_shader = GFX::Shader::Get("tonemapper");
-			illumination_shader->enable();
-			illumination_shader->setUniform("u_scale", tonemapper_scale);
-			illumination_shader->setUniform("u_average_lum", average_lum);
-			illumination_shader->setUniform("u_lumwhite2", lumwhite2);
-			illumination_shader->setUniform("u_igamma", 1.0f / gamma);
-			illumination_fbo->color_textures[0]->toViewport(illumination_shader);
+			renderPostFX(illumination_fbo->color_textures[0], gbuffers_fbo->depth_texture, camera);
 		}
-
 
 		if (show_ssao)
 		{
@@ -1153,13 +1455,14 @@ void SCN::Renderer::renderDeferred(Camera* camera) {
 			if (!show_only_fbo)
 				glDisable(GL_BLEND);
 		}
-		//compute the illumination
 
+		if (show_volumetric)
+			volumetric_fbo->color_textures[0]->toViewport();
 	}
 }
-void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
+void Renderer::renderMeshWithMaterialGBuffers(RenderCall *rc, Camera *camera)
 {
-	//in case there is nothing to do
+	// in case there is nothing to do
 	if (!rc->mesh || !rc->mesh->getNumVertices() || !rc->material)
 		return;
 	assert(glGetError() == GL_NO_ERROR);
@@ -1170,20 +1473,19 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 	if (render_boundaries)
 		rc->mesh->renderBounding(rc->model, true);
 
-	//define locals to simplify coding
-	GFX::Shader* shader = NULL;
-	GFX::Texture* white = GFX::Texture::getWhiteTexture(); //a 1x1 white texture
+	// define locals to simplify coding
+	GFX::Shader *shader = NULL;
+	GFX::Texture *white = GFX::Texture::getWhiteTexture(); // a 1x1 white texture
 
-	GFX::Texture* albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
-	GFX::Texture* emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
-	GFX::Texture* normal_texture = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
-	GFX::Texture* metalness_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
+	GFX::Texture *albedo_texture = rc->material->textures[SCN::eTextureChannel::ALBEDO].texture;
+	GFX::Texture *emissive_texture = rc->material->textures[SCN::eTextureChannel::EMISSIVE].texture;
+	GFX::Texture *normal_texture = rc->material->textures[SCN::eTextureChannel::NORMALMAP].texture;
+	GFX::Texture *metalness_texture = rc->material->textures[SCN::eTextureChannel::METALLIC_ROUGHNESS].texture;
 
-
-	//select the blending
+	// select the blending
 	glDisable(GL_BLEND);
 
-	//select if render both sides of the triangles
+	// select if render both sides of the triangles
 	if (rc->material->two_sided)
 		glDisable(GL_CULL_FACE);
 	else
@@ -1192,67 +1494,71 @@ void Renderer::renderMeshWithMaterialGBuffers(RenderCall* rc, Camera* camera)
 
 	glEnable(GL_DEPTH_TEST);
 
-	//chose a shader
+	// chose a shader
 	shader = GFX::Shader::Get("gbuffers");
 
 	assert(glGetError() == GL_NO_ERROR);
 
-	//no shader? then nothing to render
+	// no shader? then nothing to render
 	if (!shader)
 		return;
 	shader->enable();
+	if (skybox_cubemap)
+		shader->setUniform("u_environment", skybox_cubemap, 8);
 
-	//upload uniforms
+	// upload uniforms
 	shader->setUniform("u_model", rc->model);
 	cameraToShader(camera, shader);
 	float t = getTime();
 	shader->setUniform("u_time", t);
-	//TODO: normalmaps with flags
-	vec4 texture_flags = vec4(0, 0, 0, 0); //normal, occlusion, specular
-	
-	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
+	// TODO: normalmaps with flags
+	vec4 texture_flags = vec4(0, 0, 0, 0); // normal, occlusion, specular
+
+	shader->setUniform("u_alpha_cutoff", (float)(rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 	shader->setUniform("u_color", rc->material->color);
 	shader->setUniform("u_albedo_texture", albedo_texture ? albedo_texture : white, 0);
 	shader->setUniform("u_emissive_texture", emissive_texture ? emissive_texture : white, 1);
 	shader->setUniform("u_emissive_factor", rc->material->emissive_factor);
 	int textureSlot = 2;
 
-	if (normal_texture && enable_normal_map) {
+	if (normal_texture && enable_normal_map)
+	{
 		texture_flags.x = 1;
 		shader->setUniform("u_normal_texture", normal_texture, textureSlot++);
 	}
-	if (metalness_texture) {
+	if (metalness_texture)
+	{
 		shader->setUniform("u_metalic_roughness", metalness_texture, textureSlot++);
-		if (pbr_is_active) {
+		if (pbr_is_active)
+		{
 			shader->setUniform("u_metalness_roughness", vec2(rc->material->metallic_factor, rc->material->roughness_factor));
 		}
 	}
 
-	shader->setUniform("u_alpha_cutoff", (float) (rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
-	
+	shader->setUniform("u_alpha_cutoff", (float)(rc->material->alpha_mode == SCN::eAlphaMode::MASK ? rc->material->alpha_cutoff : 0.001f));
 
 	shader->setUniform("u_texture_flags", texture_flags);
 
 	if (render_wireframe)
 		glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
 
-	//do the draw call that renders the mesh into the screen
+	// do the draw call that renders the mesh into the screen
 	rc->mesh->render(GL_TRIANGLES);
 
-	//disable shader
+	// disable shader
 	shader->disable();
 
-	//set the render state as it was before to avoid problems with future renders
+	// set the render state as it was before to avoid problems with future renders
 	glDisable(GL_BLEND);
 	glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
 }
 
-void SCN::Renderer::captureProbe(sProbe& probe)
+void Renderer::captureProbe(sProbe &probe)
 {
-	FloatImage images[6]; //here we will store the six views
+	FloatImage images[6]; // here we will store the six views
 	Camera cam;
 
-//set the fov to 90 and the aspect to 1
+	// set the fov to 90 and the aspect to 1
 	cam.setPerspective(90, 1, 0.1, 1000);
 
 	if (!irr_fbo)
@@ -1261,9 +1567,9 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		irr_fbo->create(64, 64, 1, GL_RGB, GL_FLOAT);
 	}
 
-	for (int i = 0; i < 6; ++i) //for every cubemap face
+	for (int i = 0; i < 6; ++i) // for every cubemap face
 	{
-		//compute camera orientation using defined vectors
+		// compute camera orientation using defined vectors
 		vec3 eye = probe.pos;
 		vec3 front = cubemapFaceNormals[i][2];
 		vec3 center = probe.pos + front;
@@ -1271,7 +1577,7 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		cam.lookAt(eye, center, up);
 		cam.enable();
 
-		//render the scene from this point of view
+		// render the scene from this point of view
 		irr_fbo->bind();
 		{
 			eRenderMode tmp_render_mode = render_mode;
@@ -1281,46 +1587,98 @@ void SCN::Renderer::captureProbe(sProbe& probe)
 		}
 		irr_fbo->unbind();
 
-		//read the pixels back and store in a FloatImage
+		// read the pixels back and store in a FloatImage
 		images[i].fromTexture(irr_fbo->color_textures[0]);
 	}
 
-	//compute the coefficients given the six images
+	// compute the coefficients given the six images
 	probe.sh = computeSH(images);
 }
 
-void SCN::Renderer::renderProbe(sProbe& probe)
+void Renderer::captureReflection(sReflectionProbe &probe)
 {
-	Camera* camera = Camera::current;
-	GFX::Shader* shader = GFX::Shader::Get("spherical_probe");
+	if (!reflection_fbo)
+	{
+		reflection_fbo = new GFX::FBO();
+	}
+	if (!probe.texture)
+	{
+		probe.texture = new GFX::Texture();
+		probe.texture->createCubemap(256, 256, nullptr, GL_RGB, GL_FLOAT, true);
+	}
+	eRenderMode prev = render_mode;
+	render_mode = LIGHTS_MULTIPASS;
+	Camera cam;
+	cam.setPerspective(90, 1, 0.1, 1000);
 
+	for (int i = 0; i < 6; i++)
+	{
+		reflection_fbo->setTexture(probe.texture, i);
+		reflection_fbo->bind();
+
+		vec3 target = probe.pos + cubemapFaceNormals[i][2];
+		vec3 up = cubemapFaceNormals[i][1];
+		cam.lookAt(probe.pos, target, up);
+
+		eRenderMode tmp_render_mode = render_mode;
+		render_mode = eRenderMode::LIGHTS_MULTIPASS;
+		renderForward(&cam);
+		render_mode = tmp_render_mode;
+		reflection_fbo->unbind();
+	}
+
+	glEnable(GL_TEXTURE_CUBE_MAP_SEAMLESS);
+	probe.texture->generateMipmaps();
+}
+
+void Renderer::renderReflectionProbe(sReflectionProbe &probe)
+{
+
+	GFX::Texture *texture = probe.texture ? probe.texture : skybox_cubemap;
+	Camera *camera = Camera::current;
+	GFX::Shader *shader = GFX::Shader::Get("reflectionProbe");
+	shader->enable();
+
+	cameraToShader(camera, shader);
 	Matrix44 model;
 	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
 	model.scale(10, 10, 10);
+	shader->setUniform("u_model", model);
+	shader->setUniform("u_texture", texture, 0);
+	sphere.render(GL_TRIANGLES);
+}
+
+void Renderer::renderProbe(sProbe &probe)
+{
+	Camera *camera = Camera::current;
+	GFX::Shader *shader = GFX::Shader::Get("spherical_probe");
+
+	Matrix44 model;
+	model.scale(10, 10, 10);
+	model.setTranslation(probe.pos.x, probe.pos.y, probe.pos.z);
 
 	shader->enable();
 
 	cameraToShader(camera, shader);
 	shader->setUniform("u_model", model);
-	shader->setUniform3Array("u_coeffs",probe.sh.coeffs[0].v, 9);
+	shader->setUniform3Array("u_coeffs", probe.sh.coeffs[0].v, 9);
 
 	sphere.render(GL_TRIANGLES);
 }
 
-void SCN::Renderer::applyIrradiance() 
+void Renderer::applyIrradiance()
 {
 	if (!probes_texture)
 		return;
 
-	GFX::Mesh* mesh = GFX::Mesh::getQuad();
-	Camera* camera = Camera::current;
+	GFX::Mesh *mesh = GFX::Mesh::getQuad();
+	Camera *camera = Camera::current;
 
 	glDisable(GL_DEPTH_TEST);
 	glEnable(GL_BLEND);
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-
-	GFX::Shader* irradiance_shader = GFX::Shader::Get("irradiance");
+	GFX::Shader *irradiance_shader = GFX::Shader::Get("irradiance");
 
 	irradiance_shader->enable();
 	gbuffersToShader(gbuffers_fbo, irradiance_shader);
@@ -1330,31 +1688,27 @@ void SCN::Renderer::applyIrradiance()
 
 	vec3 irradiance_delta = (irradiance_cache_info.end - irradiance_cache_info.start);
 	irradiance_delta.x /= (irradiance_cache_info.dims.z - 1);
-	irradiance_delta.y /= (irradiance_cache_info.dims.y - 1);  
-	irradiance_delta.z /= (irradiance_cache_info.dims.z - 1);  
+	irradiance_delta.y /= (irradiance_cache_info.dims.y - 1);
+	irradiance_delta.z /= (irradiance_cache_info.dims.z - 1);
 
 	irradiance_shader->setUniform("u_irr_start", irradiance_cache_info.start);
 	irradiance_shader->setUniform("u_irr_end", irradiance_cache_info.end);
 	irradiance_shader->setUniform("u_irr_dims", irradiance_cache_info.dims);
-	irradiance_shader->setUniform("u_irr_normal_distance", 5.0f );
+	irradiance_shader->setUniform("u_irr_normal_distance", 5.0f);
 	irradiance_shader->setUniform("u_irr_multiplier", irradiance_multiplier);
 	irradiance_shader->setUniform("u_irr_delta", irradiance_delta);
 	irradiance_shader->setUniform("u_num_probes", irradiance_cache_info.num_probes);
 	irradiance_shader->setTexture("u_probes_texture", probes_texture, 4);
 
-
 	mesh->render(GL_TRIANGLES);
-
 }
 
-
-
-void SCN::Renderer::cameraToShader(Camera* camera, GFX::Shader* shader)
+void Renderer::cameraToShader(Camera *camera, GFX::Shader *shader)
 {
-	shader->setUniform("u_viewprojection", camera->viewprojection_matrix );
+	shader->setUniform("u_viewprojection", camera->viewprojection_matrix);
 	shader->setUniform("u_camera_position", camera->eye);
 }
-void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
+void Renderer::lightToShader(LightEntity *light, GFX::Shader *shader)
 {
 	shader->setUniform("u_light_info", vec4((int)light->light_type, light->near_distance, light->max_distance, 0));
 	shader->setUniform("u_light_front", light->root.model.rotateVector(vec3(0, 0, 1)));
@@ -1363,17 +1717,17 @@ void SCN::Renderer::lightToShader(LightEntity* light, GFX::Shader* shader)
 	if (light->light_type == eLightType::SPOT)
 		shader->setUniform("u_light_cone", vec2(cos(light->cone_info.x * DEG2RAD), cos(light->cone_info.y * DEG2RAD)));
 
-
 	shader->setUniform("u_shadow_params", vec2(light->cast_shadows && enable_shadows ? 1 : 0, light->shadow_bias));
-	if (light->cast_shadows && enable_shadows) {
+	if (light->cast_shadows && enable_shadows)
+	{
 		shader->setTexture("u_shadowmap", shadow_atlas, 8);
 		shader->setUniform("u_shadow_viewproj", light->shadow_viewproj);
 		shader->setUniform("u_shadow_region", light->shadowmap_region);
 	}
 }
 
-
-void SCN::Renderer::gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader) {
+void Renderer::gbuffersToShader(GFX::FBO *gbuffers, GFX::Shader *shader)
+{
 	shader->setTexture("u_albedo_texture", gbuffers_fbo->color_textures[0], 0);
 	shader->setTexture("u_normal_texture", gbuffers_fbo->color_textures[1], 1);
 	shader->setTexture("u_extra_texture", gbuffers_fbo->color_textures[2], 2);
@@ -1388,47 +1742,52 @@ void SCN::Renderer::gbuffersToShader(GFX::FBO* gbuffers, GFX::Shader* shader) {
 		shader->setUniform("u_pbr_state", 0.0f);
 }
 
-void Renderer::renderAlphaObjects(Camera* camera) {
-	for (int i = 0; i < render_order_alpha.size(); i++) {
+void Renderer::renderAlphaObjects(Camera *camera)
+{
+	for (int i = 0; i < render_order_alpha.size(); i++)
+	{
 		renderMeshWithMaterialLight(&render_order_alpha[i], camera);
 	}
 }
 
-void Renderer::showShadowmaps() {
+void Renderer::showShadowmaps()
+{
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_BLEND);
 
 	if (!enable_shadows)
 		return;
 
-	GFX::Shader* shader = GFX::Shader::getDefaultShader("linear_depth");
+	GFX::Shader *shader = GFX::Shader::getDefaultShader("linear_depth");
 	shader->enable();
-	shader->setUniform("u_camera_nearfar", vec2( 0.1, 1000));
+	shader->setUniform("u_camera_nearfar", vec2(0.1, 1000));
 	glViewport(300, 100, 512, 256);
-	shadow_atlas->toViewport( shader);
+	shadow_atlas->toViewport(shader);
 	shader->disable();
-		
-	
+
 	vec2 size = CORE::getWindowSize();
 	glViewport(0, 0, size.x, size.y);
 }
 
-bool Renderer::cullLights(LightEntity* light, BoundingBox bb) {
+bool Renderer::cullLights(LightEntity *light, BoundingBox bb)
+{
 
 	eLightType type = light->light_type;
-	if (type == eLightType::POINT )
+	if (type == eLightType::POINT)
 		return !BoundingBoxSphereOverlap(bb, light->root.model.getTranslation(), light->max_distance);
-	if (type == eLightType::SPOT) {
+	if (type == eLightType::SPOT)
+	{
 		return !spotLightAABB(light, bb);
 	}
 }
 
-bool Renderer::spotLightAABB(LightEntity* light, BoundingBox bb) {
+bool Renderer::spotLightAABB(LightEntity *light, BoundingBox bb)
+{
 	float sphereRadius = max(bb.halfsize.x * 2.0f, bb.halfsize.z * 2.0f);
 	vec3 v = bb.center - light->root.model.getTranslation();
 	float lenSq = dot(v, v);
 	float v1Len = dot(v, light->root.model.rotateVector(vec3(0, 0, -1)));
-	
+
 	float distanceClosestPoint = cos(light->cone_info.y * DEG2RAD) * sqrt(lenSq - v1Len * v1Len) - v1Len * sin(light->cone_info.y * DEG2RAD);
 	bool angleCull = distanceClosestPoint > sphereRadius;
 	bool frontCull = v1Len > sphereRadius + light->max_distance;
@@ -1438,13 +1797,13 @@ bool Renderer::spotLightAABB(LightEntity* light, BoundingBox bb) {
 }
 
 std::vector<vec3> Renderer::generateSpherePoints(int num,
-	float radius, bool hemi)
+												 float radius, bool hemi)
 {
 	std::vector<vec3> points;
 	points.resize(num);
 	for (int i = 0; i < num; i += 1)
 	{
-		vec3& p = points[i];
+		vec3 &p = points[i];
 		float u = random();
 		float v = random();
 		float theta = u * 2.0 * PI;
@@ -1463,26 +1822,26 @@ std::vector<vec3> Renderer::generateSpherePoints(int num,
 	return points;
 }
 
-
-//Switch widget extracted from: https://github.com/ocornut/imgui/issues/1537#issuecomment-780262461
-void ToggleButton(const char* label, bool* v)
+// Switch widget extracted from: https://github.com/ocornut/imgui/issues/1537#issuecomment-780262461
+void ToggleButton(const char *label, bool *v)
 {
 	ImGui::Text(label);
 	ImGui::SameLine();
-	ImVec4* colors = ImGui::GetStyle().Colors;
+	ImVec4 *colors = ImGui::GetStyle().Colors;
 	ImVec2 p = ImGui::GetCursorScreenPos();
-	ImDrawList* draw_list = ImGui::GetWindowDrawList();
-	const char* str_id = "";
+	ImDrawList *draw_list = ImGui::GetWindowDrawList();
+	const char *str_id = "";
 
 	float height = ImGui::GetFrameHeight();
 	float width = height * 1.55f;
 	float radius = height * 0.50f;
 
 	ImGui::InvisibleButton(str_id, ImVec2(width, height));
-	if (ImGui::IsItemClicked()) *v = !*v;
-	ImGuiContext& gg = *GImGui;
+	if (ImGui::IsItemClicked())
+		*v = !*v;
+	ImGuiContext &gg = *GImGui;
 	float ANIM_SPEED = 0.085f;
-	if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id))// && g.LastActiveIdTimer < ANIM_SPEED)
+	if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id)) // && g.LastActiveIdTimer < ANIM_SPEED)
 		float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
 	if (ImGui::IsItemHovered())
 		draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? colors[ImGuiCol_ButtonActive] : ImVec4(0.78f, 0.78f, 0.78f, 1.0f)), height * 0.5f);
@@ -1494,67 +1853,55 @@ void ToggleButton(const char* label, bool* v)
 
 void Renderer::showUI()
 {
-		
+
 	ToggleButton("Wireframe", &render_wireframe);
 	ToggleButton("Boundaries", &render_boundaries);
 
-	//add here your stuff
+	// add here your stuff
 	ToggleButton("Normal Map", &enable_normal_map);
 	ToggleButton("Occlusion", &enable_occ);
 	ToggleButton("Specular", &enable_specular);
 	ToggleButton("Shadows", &enable_shadows);
 
 	ToggleButton("Show Shadow Atlas", &show_shadowmaps);
+
+	ImGui::Combo("Render Mode", (int *)&render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
+
 	ToggleButton("Activate PBR", &pbr_is_active);
-	ImGui::Text("Tonemapper parameters");
-	{
-		ImGui::SliderFloat("Scale", &tonemapper_scale, 0.01, 2.0);
-		ImGui::SliderFloat("Average lum", &average_lum, 0.01, 2.0);
-		ImGui::SliderFloat("Lum white", &lumwhite2, 0.01, 2.0);
-		ImGui::SliderFloat("Gamma", &gamma, 0.01, 2.0);
-	}
 
 	ToggleButton("Show SSAO", &show_ssao);
 	if (show_ssao)
 	{
-		ImGui::SameLine();
-		ImGui::Checkbox("Show only FBO", &show_only_fbo);
-		ImGui::SliderFloat("ssao_radius", &ssao_radius, 0.0, 50.0);
-		ToggleButton("Activate SSAO+", &ssao_plus);
-		/*if (ssao_plus == swap_ssao)
+		if (ImGui::TreeNode("SSAO parameters"))
 		{
-			std::vector<vec3> tmp_random_points = random_points;
-			random_points = copy_random_points;
-			copy_random_points = tmp_random_points;
-			tmp_random_points.~vector();
-			swap_ssao = !ssao_plus;
-		}*/
+			ToggleButton("Show only FBO", &show_only_fbo);
+			ImGui::SliderFloat("ssao_radius", &ssao_radius, 0.0, 50.0);
+			ToggleButton("Activate SSAO+", &ssao_plus);
+			ImGui::TreePop();
+		}
 	}
 
-	if(enable_shadows)
-		ToggleButton("Show Shadow Atlas", &show_shadowmaps);
-
-	ImGui::Combo("Render Mode",(int*) &render_mode, "FLAT\0TEXTURED\0LIGHTS_MULTIPASS\0LIGHTS_SINGLEPASS\0DEFERRED\0", 5);
 	if (render_mode == eRenderMode::DEFERRED)
 		ToggleButton("Show all buffers", &show_gbuffers);
-	if (show_gbuffers) {
-		ImGui::Text("Select buffers");
-		
-		int buffer1 = buffers_to_show[0];
-		int buffer2 = buffers_to_show[1];
-		int buffer3 = buffers_to_show[2];
-		int buffer4 = buffers_to_show[3];
+	if (show_gbuffers)
+	{
+		if (ImGui::TreeNode("gbuffers selection"))
+		{
+			int buffer1 = buffers_to_show[0];
+			int buffer2 = buffers_to_show[1];
+			int buffer3 = buffers_to_show[2];
+			int buffer4 = buffers_to_show[3];
 
-		ImGui::Combo("Upper Left", (int*) &buffer1, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
-		ImGui::Combo("Upper Right", (int*) &buffer2, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
-		ImGui::Combo("Lower Left", (int*) &buffer3, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
-		ImGui::Combo("Upper Right", (int*) &buffer4, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+			ImGui::Combo("Upper Left", (int *)&buffer1, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+			ImGui::Combo("Upper Right", (int *)&buffer2, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+			ImGui::Combo("Lower Left", (int *)&buffer3, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
+			ImGui::Combo("Upper Right", (int *)&buffer4, "Albedo\0Normalmap\0Emissive\0Depth\0Oclussion\0Metallic\0Roughness", 7);
 
-		buffers_to_show[0] = buffer1;
-		buffers_to_show[1] = buffer2;
-		buffers_to_show[2] = buffer3;
-		buffers_to_show[3] = buffer4;
-
+			buffers_to_show[0] = buffer1;
+			buffers_to_show[1] = buffer2;
+			buffers_to_show[2] = buffer3;
+			buffers_to_show[3] = buffer4;
+		}
 	}
 	ToggleButton("Activate irradiance", &irradiance);
 	if (irradiance)
@@ -1569,11 +1916,64 @@ void Renderer::showUI()
 			if (ImGui::Button("Load Probes"))
 				loadIrradianceCache();
 		}
+	}
+	ToggleButton("Show reflection probe", &show_reflection_probe);
+	if (ImGui::Button("update reflection"))
+		captureReflection(probe);
 
-		ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
+	ImGui::SliderFloat("Irradiance multiplier", &irradiance_multiplier, 0.0f, 50.0f);
+	ToggleButton("Enable Volumetric", &enable_volumetric);
+	if (enable_volumetric)
+	{
+		if (ImGui::TreeNode("Volumetric parameters"))
+		{
+			ImGui::DragFloat("Air Density", &air_density, 0.0001, 0.0, 0.1);
+			ToggleButton("Show Volumetric", &show_volumetric);
+		}
+	}
+
+	if (ImGui::TreeNode("PostFX parameters"))
+	{
+		ToggleButton("Enable color correction", &enable_color_correction);
+		if (enable_color_correction)
+			ImGui::SliderFloat("Brightness", &brightness_fx, 0.01f, 5.0f);
+		ToggleButton("Motion blur", &motion_blur);
+		ToggleButton("Blur", &blur);
+		if (blur)
+			ImGui::SliderFloat("Blur intensity", &blur_intensity, 0.01f, 5.0f);
+
+		/*ToggleButton("Bloom/Glow", &enable_bloom);
+		if (enable_bloom)
+		{
+			ImGui::SliderInt("Downsample Iterations", &downsample_iterations, 2, 8);
+		}*/
+		ToggleButton("LUT", &LUT);
+		if (LUT)
+		{
+
+			ImGui::Combo("LUT selected", &current_LUT, "brdfLUT\0NeutralColorLUT\0InvertedNeutralColorLUT\0", 3);
+			ImGui::SliderFloat("LUT amount", &LUTamount, 0.01f, 1.0f);
+		}
+		ToggleButton("Depth of Field", &DoF);
+		if (DoF)
+		{
+			ImGui::SliderFloat("Minimum distance", &min_dof_distance, 0.01f, max_dof_distance - 0.01f);
+			ImGui::SliderFloat("Maximum distance", &max_dof_distance, min_dof_distance + 0.01f, 50.0f);
+		}
+		if (ImGui::TreeNode("Tonemapper"))
+		{
+			ImGui::SliderFloat("Scale", &tonemapper_scale, 0.01, 2.0);
+			ImGui::SliderFloat("Average lum", &average_lum, 0.01, 2.0);
+			ImGui::SliderFloat("Lum white", &lumwhite2, 0.01, 2.0);
+			ImGui::SliderFloat("Gamma", &gamma, 0.01, 2.0);
+			ImGui::TreePop();
+		}
+		ImGui::TreePop();
 	}
 }
 
 #else
-void Renderer::showUI() {}
+void Renderer::showUI()
+{
+}
 #endif

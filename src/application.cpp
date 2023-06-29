@@ -23,7 +23,7 @@ Application::Application()
 	//add here your own entities
 	REGISTER_ENTITY_TYPE(SCN::LightEntity);
 	//...
-
+	REGISTER_ENTITY_TYPE(SCN::DecalEntity);
 	// Create camera
 	camera = new Camera();
 	camera->lookAt(vec3(-150.f, 150.0f, 250.f), vec3(0.f, 0.0f, 0.f), vec3(0.f, 1.f, 0.f));
